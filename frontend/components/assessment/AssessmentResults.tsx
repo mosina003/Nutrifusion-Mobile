@@ -233,7 +233,7 @@ export default function AssessmentResults({ results, onStartNew }: AssessmentRes
             <div className="flex items-center justify-between">
               <span className="text-lg font-semibold">Dominant Pattern:</span>
               <Badge className="text-lg px-4 py-1 bg-amber-600">
-                {scores.dominant_pattern.replace('_', ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                {scores.primary_pattern?.replace('_', ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
               </Badge>
             </div>
             {scores.secondary_pattern && (
@@ -246,7 +246,11 @@ export default function AssessmentResults({ results, onStartNew }: AssessmentRes
             )}
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Severity:</span>
-              <Badge variant="secondary">{scores.severity}</Badge>
+              <Badge variant="secondary">
+                {scores.balance_indicator 
+                  ? scores.balance_indicator.charAt(0).toUpperCase() + scores.balance_indicator.slice(1)
+                  : scores.severity}
+              </Badge>
             </div>
           </div>
 

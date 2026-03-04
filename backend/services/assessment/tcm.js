@@ -111,6 +111,13 @@ class TCMEngine {
     if (scoreDifference >= 5) severity = 3; // Strong
     else if (scoreDifference >= 3) severity = 2; // Moderate
 
+    // Generate description
+    let pattern_description = `Your assessment reveals a ${primaryPattern} pattern`;
+    if (secondaryPattern) {
+      pattern_description += ` with ${secondaryPattern} tendencies`;
+    }
+    pattern_description += `. Your overall thermal tendency is ${coldHeatResult}.`;
+
     return {
       primary_pattern: primaryPattern,
       secondary_pattern: secondaryPattern,
@@ -124,7 +131,8 @@ class TCMEngine {
         liver: liverPattern
       },
       score_difference: scoreDifference,
-      balance_indicator: this._getSeverityLabel(severity)
+      balance_indicator: this._getSeverityLabel(severity),
+      pattern_description: pattern_description
     };
   }
 
@@ -213,10 +221,58 @@ class TCMEngine {
       section_analysis: scores.section_analysis,
       detailed_patterns: scores.pattern_scores,
       recommendations: this._generateRecommendations(scores),
+      pattern_description: this._generatePatternDescription(scores),
+      balancing_strategy: this._generateBalancingStrategy(scores),
       timestamp: new Date().toISOString()
     };
 
     return profile;
+  }
+
+  /**
+   * Generate pattern description
+   */
+  _generatePatternDescription(scores) {
+    let description = `Your TCM assessment reveals a ${scores.primary_pattern} pattern`;
+    
+    if (scores.secondary_pattern) {
+      description += ` with ${scores.secondary_pattern} tendencies`;
+    }
+    
+    description += `. Your overall thermal tendency is ${scores.cold_heat}.`;
+    
+    if (scores.severity === 3) {
+      description += ' This pattern is quite pronounced and would benefit from consistent dietary and lifestyle adjustments.';
+    } else if (scores.severity === 2) {
+      description += ' This pattern is moderate and can be balanced with appropriate food choices.';
+    } else {
+      description += ' This pattern is mild and can be easily balanced with minor dietary adjustments.';
+    }
+    
+    return description;
+  }
+
+  /**
+   * Generate balancing strategy
+   */
+  _generateBalancingStrategy(scores) {
+    let strategy = '';
+    
+    if (scores.cold_heat === 'Cold') {
+      strategy = 'Your body needs warming support. Focus on cooked meals, warming spices like ginger and cinnamon, and avoid raw or cold foods. Regular warm soups and stews are ideal.';
+    } else if (scores.cold_heat === 'Heat') {
+      strategy = 'Your body needs cooling support. Include fresh vegetables, cooling fruits, and minimize spicy, fried, or heating foods. Green tea and cucumber are beneficial.';
+    } else {
+      strategy = 'Your thermal balance is good. Maintain a varied diet with seasonal foods and listen to your body\'s signals.';
+    }
+    
+    if (scores.primary_pattern === 'Qi Deficiency') {
+      strategy += ' Additionally, eat Qi-tonifying foods like whole grains, sweet potatoes, and well-cooked proteins to build your energy.';
+    } else if (scores.primary_pattern === 'Dampness') {
+      strategy += ' Also focus on reducing dampness through avoiding greasy foods and including aromatic herbs like oregano and thyme.';
+    }
+    
+    return strategy;
   }
 
   /**
@@ -253,6 +309,132 @@ class TCMEngine {
     }
 
     return recommendations;
+  }
+
+  /**
+   * Generate nutrition inputs for recommendation engine
+   */
+  generateNutritionInputs(scores, healthProfile) {
+    const inputs = {
+      primary_pattern: scores.primary_pattern,
+      secondary_pattern: scores.secondary_pattern,
+      cold_heat: scores.cold_heat,
+      severity: scores.severity,
+      food_temperature: this._getFoodTemperature(scores.cold_heat),
+      food_flavors: this._getBalancingFlavors(scores.primary_pattern),
+      avoid_foods: this._getAvoidFoods(scores.cold_heat, scores.primary_pattern),
+      cooking_methods: this._getCookingMethods(scores.cold_heat),
+      meal_timing: this._getMealTiming(scores)
+    };
+
+    return inputs;
+  }
+
+  /**
+   * Get food temperature recommendations
+   */
+  _getFoodTemperature(coldHeat) {
+    if (coldHeat === 'Cold') {
+      return ['warm', 'hot', 'heating'];
+    } else if (coldHeat === 'Heat') {
+      return ['cool', 'cold', 'cooling'];
+    }
+    return ['neutral', 'balanced'];
+  }
+
+  /**
+   * Get balancing flavors based on pattern
+   */
+  _getBalancingFlavors(pattern) {
+    const flavorMap = {
+      'Cold Pattern': ['pungent', 'sweet', 'salty'],
+      'Heat Pattern': ['bitter', 'sour', 'salty'],
+      'Qi Deficiency': ['sweet', 'pungent'],
+      'Qi Excess': ['bitter', 'sour'],
+      'Dampness': ['pungent', 'bitter'],
+      'Dryness': ['sweet', 'sour', 'salty'],
+      'Liver Qi Stagnation': ['pungent', 'sour'],
+      'Liver Heat': ['bitter', 'sour'],
+      'Yin Deficiency': ['sweet', 'salty', 'sour'],
+      'Yang Deficiency': ['pungent', 'sweet', 'salty']
+    };
+    return flavorMap[pattern] || ['sweet', 'pungent'];
+  }
+
+  /**
+   * Get foods to avoid
+   */
+  _getAvoidFoods(coldHeat, pattern) {
+    const avoidList = [];
+    
+    if (coldHeat === 'Cold') {
+      avoidList.push('raw foods', 'cold beverages', 'iced foods', 'excessive salads');
+    } else if (coldHeat === 'Heat') {
+      avoidList.push('spicy foods', 'hot spices', 'fried foods', 'alcohol', 'red meat');
+    }
+
+    if (pattern === 'Dampness') {
+      avoidList.push('greasy foods', 'dairy', 'sweets', 'fried foods');
+    }
+
+    if (pattern === 'Liver Qi Stagnation' || pattern === 'Liver Heat') {
+      avoidList.push('alcohol', 'coffee', 'spicy foods', 'greasy foods');
+    }
+
+    return avoidList;
+  }
+
+  /**
+   * Get cooking methods
+   */
+  _getCookingMethods(coldHeat) {
+    if (coldHeat === 'Cold') {
+      return ['stewing', 'braising', 'roasting', 'baking', 'stir-frying'];
+    } else if (coldHeat === 'Heat') {
+      return ['steaming', 'boiling', 'light sautéing', 'blanching'];
+    }
+    return ['steaming', 'boiling', 'sautéing', 'baking'];
+  }
+
+  /**
+   * Get meal timing recommendations
+   */
+  _getMealTiming(scores) {
+    return {
+      breakfast: '7-9am (warm, nourishing)',
+      lunch: '11am-1pm (main meal of the day)',
+      dinner: '5-7pm (light, easy to digest)',
+      note: 'Eat regular meals, avoid late-night eating'
+    };
+  }
+
+  /**
+   * Validate responses before scoring
+   */
+  validateResponses(responses, requiredQuestions) {
+    const errors = [];
+
+    // Check if all required questions are answered
+    requiredQuestions.forEach(qId => {
+      if (!responses[qId]) {
+        errors.push(`Question ${qId} is required`);
+      }
+    });
+
+    // Validate answer format
+    Object.entries(responses).forEach(([qId, answer]) => {
+      if (!answer.pattern) {
+        errors.push(`Missing pattern value for question ${qId}`);
+      }
+      if (answer.weight === undefined || answer.weight === null) {
+        errors.push(`Missing weight value for question ${qId}`);
+      }
+    });
+
+    return {
+      valid: errors.length === 0,
+      errors
+    };
   }
 }
 
