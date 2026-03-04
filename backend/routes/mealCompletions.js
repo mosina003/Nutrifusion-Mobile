@@ -251,7 +251,11 @@ router.post('/regenerate-plan', protect, async (req, res) => {
       success: true,
       message: 'Diet plan regenerated successfully - All meals refreshed and tracking reset to Day 1',
       dietPlan: response,
-      framework: framework
+      framework: framework,
+      metadata: {
+        validFrom: validFrom,
+        validTo: validTo
+      }
     });
   } catch (error) {
     console.error('Error regenerating plan:', error);

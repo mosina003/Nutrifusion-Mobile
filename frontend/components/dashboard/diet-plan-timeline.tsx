@@ -78,7 +78,10 @@ export function DietPlanTimeline() {
   const [error, setError] = useState<string | null>(null)
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanDay[]>([])
   const [completions, setCompletions] = useState<Map<string, MealCompletion>>(new Map())
+  const [planStartDate, setPlanStartDate] = useState<Date | null>(null)
+  const [planEndDate, setPlanEndDate] = useState<Date | null>(null)
   const hasAttemptedRegenerate = useRef(false)
+  const hasCheckedExpiry = useRef(false)
 
   useEffect(() => {
     fetchDietPlan()
@@ -99,20 +102,44 @@ export function DietPlanTimeline() {
     }
   }, [loading, dietPlan])
 
+  // Check if plan has expired and needs regeneration
+  useEffect(() => {
+    if (planEndDate && !hasCheckedExpiry.current && !loading && !regenerating) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const endDate = new Date(planEndDate)
+      endDate.setHours(0, 0, 0, 0)
+      
+      // If today is after the plan end date, auto-regenerate
+      if (today > endDate) {
+        console.log('📅 Plan expired, auto-regenerating...')
+        hasCheckedExpiry.current = true
+        regeneratePlanSilent()
+      }
+    }
+  }, [planEndDate, loading, regenerating])
+
   // Generate weekly plan from diet plan data
   useEffect(() => {
-    if (dietPlan) {
+    if (dietPlan && planStartDate) {
       generateWeeklyPlan()
     }
-  }, [dietPlan, completions])
+  }, [dietPlan, completions, planStartDate])
 
   const generateWeeklyPlan = () => {
+    if (!planStartDate) return
+
     const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const startDate = new Date(planStartDate)
+    startDate.setHours(0, 0, 0, 0)
+    
     const daysData: WeeklyPlanDay[] = []
 
+    // Generate all 7 days starting from planStartDate
     for (let i = 0; i < 7; i++) {
-      const currentDate = new Date(today)
-      currentDate.setDate(today.getDate() + i)
+      const currentDate = new Date(startDate)
+      currentDate.setDate(startDate.getDate() + i)
       const dateString = currentDate.toISOString().split('T')[0]
 
       const dayKey = `day_${i + 1}`
@@ -134,6 +161,11 @@ export function DietPlanTimeline() {
     }
 
     setWeeklyPlan(daysData)
+    
+    // Calculate which day we're on in the current plan
+    const daysDiff = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    const calculatedDay = Math.min(Math.max(daysDiff + 1, 1), 7) // Clamp between 1 and 7
+    setCurrentDay(calculatedDay)
   }
 
   const fetchDietPlan = async () => {
@@ -172,6 +204,14 @@ export function DietPlanTimeline() {
         setDietPlan(data.dietPlan)
         setHealthProfile(data.healthProfile)
         setFramework(data.framework || 'ayurveda')
+        
+        // Store plan dates from metadata
+        if (data.metadata?.validFrom) {
+          setPlanStartDate(new Date(data.metadata.validFrom))
+        }
+        if (data.metadata?.validTo) {
+          setPlanEndDate(new Date(data.metadata.validTo))
+        }
       } else {
         setError(data.error || 'Failed to load diet plan')
       }
@@ -293,6 +333,23 @@ export function DietPlanTimeline() {
         if (data.success && data.dietPlan) {
           setDietPlan(data.dietPlan)
           setFramework(data.framework || framework)
+          
+          // Use metadata dates from response, or calculate if not provided
+          if (data.metadata?.validFrom) {
+            setPlanStartDate(new Date(data.metadata.validFrom))
+          } else {
+            setPlanStartDate(new Date())
+          }
+          
+          if (data.metadata?.validTo) {
+            setPlanEndDate(new Date(data.metadata.validTo))
+          } else {
+            const newEndDate = new Date()
+            newEndDate.setDate(newEndDate.getDate() + 7)
+            setPlanEndDate(newEndDate)
+          }
+          
+          hasCheckedExpiry.current = false
         }
         toast.success('Diet plan regenerated successfully!')
         await fetchMealCompletions()
@@ -333,6 +390,23 @@ export function DietPlanTimeline() {
           console.log('✅ Setting diet plan with 7_day_plan:', data.dietPlan['7_day_plan'])
           setDietPlan(data.dietPlan)
           setFramework(data.framework || framework)
+          
+          // Use metadata dates from response, or calculate if not provided
+          if (data.metadata?.validFrom) {
+            setPlanStartDate(new Date(data.metadata.validFrom))
+          } else {
+            setPlanStartDate(new Date())
+          }
+          
+          if (data.metadata?.validTo) {
+            setPlanEndDate(new Date(data.metadata.validTo))
+          } else {
+            const newEndDate = new Date()
+            newEndDate.setDate(newEndDate.getDate() + 7)
+            setPlanEndDate(newEndDate)
+          }
+          
+          hasCheckedExpiry.current = false
         } else {
           console.error('❌ No diet plan in response:', data)
         }

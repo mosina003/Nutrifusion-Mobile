@@ -48,15 +48,6 @@ export default function DashboardPage() {
               <Button variant="ghost" size="icon" className="text-slate-600 hover:text-slate-900">
                 <Bell className="w-5 h-5" />
               </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="text-slate-600 hover:text-slate-900"
-                onClick={() => router.push('/profile')}
-                title="View Profile"
-              >
-                <User className="w-5 h-5" />
-              </Button>
               <Button variant="ghost" size="icon" className="text-slate-600 hover:text-slate-900">
                 <Settings className="w-5 h-5" />
               </Button>
