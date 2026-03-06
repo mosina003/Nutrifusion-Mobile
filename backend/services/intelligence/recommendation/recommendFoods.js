@@ -1,5 +1,6 @@
 const Food = require('../../../models/Food');
 const { calculateFoodScore } = require('../scoring/scoreEngine');
+const tcmDietEngine = require('../diet/tcmDietEngine');
 
 /**
  * Recommendation Engine for Foods
@@ -15,14 +16,36 @@ const recommendFoods = async (user, options = {}) => {
   const { limit = 10, category = null, minScore = 40 } = options;
 
   try {
-    // Build query - fetch all foods (verified or not for now)
-    let query = {};
-    if (category) {
-      query.category = category;
+    // Determine user's medical framework
+    const userFramework = user.preferredMedicalFramework || user.assessmentFramework || 'ayurveda';
+    
+    // For TCM users, load foods from JSON file (has detailed pattern_effects)
+    let foods = [];
+    if (userFramework === 'tcm') {
+      console.log('📊 [RecommendFood] Loading TCM foods from JSON file');
+      const allTCMFoods = tcmDietEngine.getAllFoods();
+      console.log(`📊 [RecommendFood] Loaded ${allTCMFoods.length} TCM foods`);
+      
+      // Debug: Check first food structure
+      if (allTCMFoods.length > 0) {
+        const sample = allTCMFoods[0];
+        console.log(`📋 Sample TCM food: ${sample.name}, hasClears_heat=${sample.tcm?.clears_heat}, thermal=${sample.tcm?.thermalNature}`);
+      }
+      
+      // Apply category filter if specified
+      if (category) {
+        foods = allTCMFoods.filter(f => f.category === category);
+      } else {
+        foods = allTCMFoods;
+      }
+    } else {
+      // For other frameworks, load from database
+      let query = {};
+      if (category) {
+        query.category = category;
+      }
+      foods = await Food.find(query).lean();
     }
-
-    // Fetch candidate foods
-    const foods = await Food.find(query).lean();
 
     if (foods.length === 0) {
       return [];
@@ -41,6 +64,11 @@ const recommendFoods = async (user, options = {}) => {
         warnings: scoreResult.warnings,
         blocked: scoreResult.block,
         systemScores: scoreResult.systemScores,
+        // Include medical framework properties for tag display
+        tcm: food.tcm,
+        ayurveda: food.ayurveda,
+        unani: food.unani,
+        modernNutrition: food.modernNutrition,
         nutritionSummary: {
           calories: food.modernNutrition?.calories || 0,
           protein: food.modernNutrition?.protein || 0,
@@ -60,6 +88,12 @@ const recommendFoods = async (user, options = {}) => {
 
     // Sort by score (descending)
     qualified.sort((a, b) => b.finalScore - a.finalScore);
+    
+    // Debug: Log top scores for TCM users
+    if (userFramework === 'tcm' && qualified.length > 0) {
+      console.log(`✅ [RecommendFood] TCM qualified foods: ${qualified.length}/${scoredFoods.length}`);
+      console.log(`📊 Top scores:`, qualified.slice(0, 5).map(f => `${f.name}=${f.finalScore}`));
+    }
 
     // Return top N
     return qualified.slice(0, limit);

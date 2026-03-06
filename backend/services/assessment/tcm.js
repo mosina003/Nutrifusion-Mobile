@@ -82,17 +82,19 @@ class TCMEngine {
     const liverPattern = this._determineLiverPattern(sectionScores.D);
 
     // Aggregate all patterns to find primary and secondary
+    // Only include patterns with actual scores, avoid duplicate counting
     const aggregatedPatterns = {
       'Cold Pattern': patternCounts.cold,
       'Heat Pattern': patternCounts.heat,
       'Qi Deficiency': patternCounts.qi_deficiency,
-      'Qi Excess': patternCounts.qi_excess || patternCounts.heat, // Heat can indicate Qi excess
+      'Qi Excess': patternCounts.qi_excess,
       'Dampness': patternCounts.dampness,
-      'Dryness': patternCounts.heat, // Heat often causes dryness
+      'Dryness': patternCounts.dryness,
       'Liver Qi Stagnation': patternCounts.qi_stagnation,
-      'Liver Heat': patternCounts.heat, // From section D
-      'Yin Deficiency': Math.max(patternCounts.heat, 0),
-      'Yang Deficiency': patternCounts.cold + patternCounts.qi_deficiency
+      'Liver Heat': patternCounts.liver_heat,
+      // Derived patterns - only show if significant
+      'Yin Deficiency': patternCounts.heat > 5 && patternCounts.dryness > 0 ? Math.floor(patternCounts.heat * 0.5) : 0,
+      'Yang Deficiency': patternCounts.cold > 5 && patternCounts.qi_deficiency > 0 ? Math.floor((patternCounts.cold + patternCounts.qi_deficiency) * 0.5) : 0
     };
 
     // Sort patterns by score

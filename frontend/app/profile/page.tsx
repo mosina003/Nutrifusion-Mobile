@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { 
   User, Activity, Heart, Apple, TrendingUp, Calendar, 
   Download, Edit, Settings, BarChart3, Brain, Droplets,
-  Moon, Zap, UtensilsCrossed, AlertCircle, CheckCircle2, Home
+  Moon, Zap, UtensilsCrossed, AlertCircle, CheckCircle2, Home, FileText
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EditProfileModal } from '@/components/profile/EditProfileModal'
+import { ViewResultModal } from '@/components/profile/ViewResultModal'
+import { DeleteAccountModal } from '@/components/profile/DeleteAccountModal'
 
 interface ProfileData {
   identity: {
@@ -87,10 +89,48 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isViewResultModalOpen, setIsViewResultModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
 
   useEffect(() => {
     fetchProfile()
   }, [])
+
+  const handleDeleteAccount = async () => {
+    try {
+      const token = localStorage.getItem('nutrifusion_token')
+      if (!token) {
+        router.push('/login')
+        return
+      }
+
+      const response = await fetch('http://localhost:5000/api/users/delete-account', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        // Clear local storage
+        localStorage.removeItem('nutrifusion_token')
+        localStorage.removeItem('nutrifusion_user')
+        
+        // Redirect to login with message
+        alert('Your account has been successfully deleted.')
+        router.push('/login')
+      } else {
+        alert(data.message || 'Failed to delete account. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error deleting account:', error)
+      alert('An error occurred while deleting your account. Please try again.')
+    } finally {
+      setIsDeleteModalOpen(false)
+    }
+  }
 
   const fetchProfile = async () => {
     try {
@@ -179,6 +219,14 @@ export default function ProfilePage() {
               >
                 <Home className="w-4 h-4" />
                 Dashboard
+              </Button>
+              <Button 
+                variant="outline" 
+                className="gap-2"
+                onClick={() => setIsViewResultModalOpen(true)}
+              >
+                <FileText className="w-4 h-4" />
+                View Result
               </Button>
               <Button variant="outline" className="gap-2">
                 <Download className="w-4 h-4" />
@@ -280,25 +328,25 @@ export default function ProfilePage() {
                   icon={<BarChart3 className="w-5 h-5" />}
                   title="Metabolic Risk"
                   value={profile.healthIntelligence.modern.metabolicRiskLevel}
-                  badge={profile.healthIntelligence.modern.metabolicRiskLevel}
+                  badge="Status"
                 />
                 <InsightCard 
                   icon={<Activity className="w-5 h-5" />}
                   title="Digestive Score"
                   value={profile.healthIntelligence.modern.digestiveScore}
-                  badge={profile.healthIntelligence.modern.digestiveScore}
+                  badge="Health"
                 />
                 <InsightCard 
                   icon={<TrendingUp className="w-5 h-5" />}
                   title="BMR"
                   value={`${profile.healthIntelligence.modern.bmr} cal`}
-                  badge="Good"
+                  badge="Baseline"
                 />
                 <InsightCard 
                   icon={<Zap className="w-5 h-5" />}
                   title="TDEE"
                   value={`${profile.healthIntelligence.modern.tdee} cal`}
-                  badge="Active"
+                  badge="Daily"
                 />
               </>
             )}
@@ -370,22 +418,22 @@ export default function ProfilePage() {
                   badge="Dominant"
                 />
                 <InsightCard 
-                  icon={<Droplets className="w-5 h-5" />}
-                  title="Cold/Heat"
-                  value={profile.healthIntelligence.tcm.coldHeatPattern}
-                  badge={profile.healthIntelligence.tcm.coldHeatPattern}
+                  icon={<Activity className="w-5 h-5" />}
+                  title="Secondary Pattern"
+                  value={profile.healthIntelligence.tcm.secondaryPattern || 'None'}
+                  badge={profile.healthIntelligence.tcm.secondaryPattern ? 'Secondary' : 'N/A'}
                 />
                 <InsightCard 
-                  icon={<Activity className="w-5 h-5" />}
-                  title="Yang Status"
-                  value={profile.healthIntelligence.tcm.yangDeficiency ? 'Deficient' : 'Balanced'}
-                  badge={profile.healthIntelligence.tcm.yangDeficiency ? 'Low' : 'Normal'}
+                  icon={<Zap className="w-5 h-5" />}
+                  title="Severity"
+                  value={profile.healthIntelligence.tcm.severity === 1 ? 'mild' : profile.healthIntelligence.tcm.severity === 2 ? 'moderate' : 'strong'}
+                  badge={profile.healthIntelligence.tcm.severity === 1 ? 'Monitor' : profile.healthIntelligence.tcm.severity === 2 ? 'Manage' : 'Priority'}
                 />
                 <InsightCard 
                   icon={<Heart className="w-5 h-5" />}
-                  title="Yin Status"
-                  value={profile.healthIntelligence.tcm.yinDeficiency ? 'Deficient' : 'Balanced'}
-                  badge={profile.healthIntelligence.tcm.yinDeficiency ? 'Low' : 'Normal'}
+                  title="Temperature"
+                  value={profile.healthIntelligence.tcm.coldHeatPattern}
+                  badge={profile.healthIntelligence.tcm.coldHeatPattern === 'Heat' ? '🔥' : profile.healthIntelligence.tcm.coldHeatPattern === 'Cold' ? '❄️' : '⚖️'}
                 />
               </>
             )}
@@ -449,6 +497,38 @@ export default function ProfilePage() {
                     </p>
                     <p className="text-xs text-orange-700 bg-orange-100 border border-orange-300 rounded px-2 py-1 mt-2">
                       💡 Tip: {profile.healthIntelligence.unani.heat === 'hot' ? 'Balance your hot temperament with cooling foods like cucumber, yogurt, and fruits.' : 'Balance your cold temperament with warming foods like ginger, cinnamon, and soups.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TCM Pattern Explanation */}
+          {profile.healthIntelligence.framework === 'tcm' && profile.healthIntelligence.tcm && (
+            <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4 mt-4">
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-500 rounded-full p-2">
+                  <Brain className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-blue-900 mb-2">Understanding Your Pattern</h4>
+                  <div className="text-sm text-blue-800 space-y-2">
+                    <p>
+                      <strong>Your Pattern Identification:</strong> You have <strong>{profile.healthIntelligence.tcm.primaryPattern}</strong> pattern{profile.healthIntelligence.tcm.secondaryPattern && ` with ${profile.healthIntelligence.tcm.secondaryPattern} as secondary pattern`}, with <strong>{profile.healthIntelligence.tcm.severity === 1 ? 'mild' : profile.healthIntelligence.tcm.severity === 2 ? 'moderate' : 'strong'}</strong> severity, characterized by <strong>{profile.healthIntelligence.tcm.coldHeatPattern}</strong> temperature tendency.
+                    </p>
+                    <p>
+                      <strong>Your Energy Balance:</strong> 
+                      {profile.healthIntelligence.tcm.yinDeficiency && profile.healthIntelligence.tcm.yangDeficiency && ' Both Yin and Yang deficiency - focus on nourishing and warming foods.'}
+                      {profile.healthIntelligence.tcm.yinDeficiency && !profile.healthIntelligence.tcm.yangDeficiency && ' Yin deficiency - nourish with cooling, moistening foods.'}
+                      {!profile.healthIntelligence.tcm.yinDeficiency && profile.healthIntelligence.tcm.yangDeficiency && ' Yang deficiency - strengthen with warming, energizing foods.'}
+                      {!profile.healthIntelligence.tcm.yinDeficiency && !profile.healthIntelligence.tcm.yangDeficiency && ' ✓ Yin and Yang are relatively balanced.'}
+                    </p>
+                    <p>
+                      <strong>Pattern Severity:</strong> {profile.healthIntelligence.tcm.severity === 1 ? '✓ Mild - maintain balance with appropriate foods.' : profile.healthIntelligence.tcm.severity === 2 ? '⚠️ Moderate - focus on pattern-specific foods and lifestyle.' : '⚠️ Strong - prioritize therapeutic foods and consult practitioner.'}
+                    </p>
+                    <p className="text-xs text-blue-700 bg-blue-100 border border-blue-300 rounded px-2 py-1 mt-2">
+                      💡 Tip: {profile.healthIntelligence.tcm.coldHeatPattern === 'Heat' ? 'Balance your Heat pattern with cooling foods like cucumber, watermelon, mint, and green tea.' : profile.healthIntelligence.tcm.coldHeatPattern === 'Cold' ? 'Balance your Cold pattern with warming foods like ginger, garlic, cinnamon, and warm soups.' : 'Maintain your balance with neutral foods and avoid extremes.'}
                     </p>
                   </div>
                 </div>
@@ -631,6 +711,39 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* SECTION G: Danger Zone - Account Settings */}
+        <div className="bg-white rounded-xl border-2 border-red-200 shadow-sm overflow-hidden">
+          <div className="bg-red-50 border-b border-red-200 p-4">
+            <h3 className="text-lg font-semibold text-red-900 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              Danger Zone
+            </h3>
+            <p className="text-sm text-red-700 mt-1">Irreversible account actions</p>
+          </div>
+          <div className="p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h4 className="text-base font-semibold text-slate-900 mb-1">Delete Account</h4>
+                <p className="text-sm text-slate-600 mb-3">
+                  Permanently delete your account and all associated data. This action cannot be undone.
+                </p>
+                <ul className="text-xs text-slate-500 space-y-1 mb-4">
+                  <li>• All health profiles and assessments will be deleted</li>
+                  <li>• Diet plans and meal tracking history will be removed</li>
+                  <li>• Progress analytics and reports will be lost</li>
+                </ul>
+              </div>
+              <Button
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="bg-red-600 hover:bg-red-700 text-white gap-2 ml-4"
+              >
+                <AlertCircle className="w-4 h-4" />
+                Delete Account
+              </Button>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       {/* Edit Profile Modal */}
@@ -667,6 +780,19 @@ export default function ProfilePage() {
             chronicConditions: profile.dietaryInfo.chronicConditions
           }
         } : undefined}
+      />
+      
+      {/* View Result Modal */}
+      <ViewResultModal
+        isOpen={isViewResultModalOpen}
+        onClose={() => setIsViewResultModalOpen(false)}
+      />
+      
+      {/* Delete Account Modal */}
+      <DeleteAccountModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteAccount}
       />
     </div>
   )

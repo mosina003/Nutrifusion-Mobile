@@ -6,6 +6,89 @@ const DietPlan = require('../models/DietPlan');
 const { protect } = require('../middleware/auth');
 
 /**
+ * Transform modern assessment scores to clinical profile format for diet plan service
+ * @param {Object} scores - Output from modern assessment engine
+ * @param {Object} responses - Raw user responses
+ * @returns {Object} Clinical profile in expected format
+ */
+function transformModernScoresToClinicalProfile(scores, responses) {
+  // Extract response values
+  const getResponseValue = (key) => responses[key]?.value;
+  
+  const age = parseInt(getResponseValue('age')) || 30;
+  const gender = getResponseValue('gender') || 'female';
+  const height = parseFloat(getResponseValue('height')) || 165;
+  const weight = parseFloat(getResponseValue('weight')) || 65;
+  const activityLevel = getResponseValue('activity_level') || 'moderately_active';
+  const medicalConditions = getResponseValue('medical_conditions') || [];
+  const dietaryPreference = getResponseValue('dietary_preference') || 'balanced';
+  const allergies = getResponseValue('allergies') || [];
+  const goals = getResponseValue('goals') || [];
+  const sleepQuality = getResponseValue('sleep_quality') || 'good';
+  const stressLevel = getResponseValue('stress_level') || 'moderate';
+  const waterIntake = parseInt(getResponseValue('water_intake')) || 8;
+  const mealTiming = getResponseValue('meal_timing') || 'regular';
+  const digestionIssues = getResponseValue('digestion_issues') || [];
+
+  // Build clinical profile structure
+  return {
+    anthropometric: {
+      age,
+      gender,
+      height_cm: height,
+      weight_kg: weight,
+      bmi: scores.bmi || ((weight / ((height / 100) ** 2))),
+      bmi_category: scores.bmi_category || 'normal',
+      bmr_kcal: scores.bmr || 1500,
+      tdee_kcal: scores.tdee || 2000
+    },
+    metabolic_risk: {
+      level: scores.bmi >= 30 ? 'high' : scores.bmi >= 25 ? 'moderate' : 'low',
+      flags: scores.risk_flags || [],
+      indicators: {
+        bmi_status: scores.bmi_category,
+        has_diabetes: medicalConditions.includes('diabetes'),
+        has_hypertension: medicalConditions.includes('hypertension'),
+        has_metabolic_syndrome: medicalConditions.includes('metabolic_syndrome')
+      }
+    },
+    dietary_restrictions: {
+      allergies: allergies.filter(a => a !== 'none'),
+      preference: dietaryPreference,
+      excluded_foods: [],
+      medical_diet: medicalConditions.includes('diabetes') ? 'diabetic' :
+                     medicalConditions.includes('kidney_disease') ? 'renal' :
+                     medicalConditions.includes('heart_disease') ? 'cardiac' : 'none'
+    },
+    lifestyle_load: {
+      activity_level: activityLevel,
+      sleep_quality: sleepQuality,
+      stress_level: stressLevel,
+      meal_timing: mealTiming,
+      hydration_level: waterIntake >= 8 ? 'adequate' : 'low'
+    },
+    digestive_function: {
+      issues: digestionIssues.filter(i => i !== 'none'),
+      overall_health: digestionIssues.length === 0 || digestionIssues.includes('none') ? 'good' : 'needs_attention'
+    },
+    goal_strategy: {
+      primary_goals: goals,
+      target_calories: scores.recommended_calories || scores.tdee,
+      macro_split: scores.macro_split || {
+        protein: { percent: 25, grams: 125, calories: 500 },
+        carbs: { percent: 45, grams: 225, calories: 900 },
+        fats: { percent: 30, grams: 67, calories: 600 }
+      },
+      calorie_adjustment: scores.recommended_calories ? 
+        ((scores.recommended_calories - scores.tdee) / scores.tdee * 100).toFixed(1) + '%' : 
+        '0%'
+    },
+    medical_conditions: medicalConditions,
+    metabolic_risk_level: scores.bmi >= 30 ? 'high' : scores.bmi >= 25 ? 'moderate' : 'low'
+  };
+}
+
+/**
  * @route   GET /api/meal-completions
  * @desc    Get meal completions for current user
  * @access  Private
@@ -149,9 +232,18 @@ router.post('/regenerate-plan', protect, async (req, res) => {
     }
 
     // Generate new 7-day plan
+    let dietPlanInput = assessment.scores;
+    
+    // For modern framework, transform scores to clinical profile format
+    if (framework === 'modern') {
+      console.log('🔄 Transforming Modern scores to clinical profile format');
+      dietPlanInput = transformModernScoresToClinicalProfile(assessment.scores, assessment.responses || {});
+      console.log('✅ Transformed clinical profile');
+    }
+    
     const newDietPlan = await dietPlanService.generateDietPlan(
-      assessment.scores,  // Pass the assessment scores object
-      {}                  // Pass empty preferences object
+      dietPlanInput,  // Pass the transformed input (scores or clinical profile)
+      {}              // Pass empty preferences object
     );
 
     // Update the assessment with the new diet plan

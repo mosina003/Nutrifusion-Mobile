@@ -33,16 +33,24 @@ const loadTCMFoods = () => {
 };
 
 /**
+ * Capitalize first letter of a string
+ */
+const capitalizeFirst = (str) => {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
+/**
  * Transform JSON food format to engine format
  */
 const transformJSONFood = (jsonFood) => {
   return {
     _id: jsonFood.food_name,
     name: jsonFood.food_name,
-    category: jsonFood.category,
+    category: capitalizeFirst(jsonFood.category),
     tcm: {
-      thermalNature: jsonFood.thermal_nature || 'Neutral',
-      flavor: jsonFood.flavor || ['Sweet'],
+      thermalNature: capitalizeFirst(jsonFood.thermal_nature) || 'Neutral',
+      flavor: (jsonFood.flavor || ['Sweet']).map(f => capitalizeFirst(f)),
       meridian: jsonFood.meridian || ['Spleen'],
       element_affinity: jsonFood.element_affinity || 'Earth',
       qi_effect: jsonFood.qi_effect || 'tonifies',
@@ -119,10 +127,19 @@ class TCMDietEngine {
    */
   scoreFood(food, userAssessment) {
     if (!this.validateFoodEntry(food)) {
+      // Debug: Log invalid foods
+      if (Math.random() < 0.05) {
+        console.log(`❌ [TCM] Invalid food entry: ${food.name}, has tcm:`, !!food.tcm);
+      }
       return { food_name: food.name, score: 0, valid: false };
     }
 
     const { primary_pattern, secondary_pattern, cold_heat, severity } = userAssessment;
+    
+    // Debug: Log assessment values for sample foods
+    if (food.name === 'Pizza' || Math.random() < 0.05) {
+      console.log(`📋 [TCM Engine] Assessing ${food.name}:`, { primary_pattern, cold_heat, severity });
+    }
     
     let score = 0;
     const scoreBreakdown = {
@@ -151,6 +168,11 @@ class TCMDietEngine {
     scoreBreakdown.cold_heat_balance = balanceScore.score;
     score += balanceScore.score;
     reasons.push(...balanceScore.reasons);
+
+    // Debug: Log final scores for sample foods
+    if (food.name === 'Pizza' || Math.random() < 0.05) {
+      console.log(`🎯 [TCM Final] ${food.name}: score=${score}, breakdown=`, scoreBreakdown, `reasons=${reasons.length}`);
+    }
 
     return {
       food_name: food.name,

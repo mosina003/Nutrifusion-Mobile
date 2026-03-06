@@ -28,15 +28,28 @@ const calculateFoodScore = async (user, food, options = {}) => {
   let blocked = false;
 
   // Determine which framework to use based on user's assessment
-  let userFramework = null;
-  if (user.assessmentData || user.prakriti || user.vikriti) {
-    userFramework = 'ayurveda';
-  } else if (user.unaniAssessment) {
-    userFramework = 'unani';
-  } else if (user.tcmAssessment) {
-    userFramework = 'tcm';
-  } else if (user.modernAssessment) {
-    userFramework = 'modern';
+  // Priority: explicit framework > assessment data detection
+  let userFramework = user.preferredMedicalFramework || user.assessmentFramework || null;
+  
+  // If no explicit framework, detect from assessment data
+  if (!userFramework) {
+    if (user.tcmAssessment && Object.keys(user.tcmAssessment).length > 0) {
+      userFramework = 'tcm';
+    } else if (user.unaniAssessment && Object.keys(user.unaniAssessment).length > 0) {
+      userFramework = 'unani';
+    } else if (user.modernAssessment && Object.keys(user.modernAssessment).length > 0) {
+      userFramework = 'modern';
+    } else if (user.assessmentData || (user.prakriti && user.prakriti.status !== 'Unassessed') || user.vikriti) {
+      userFramework = 'ayurveda';
+    }
+  }
+  
+  // Debug: Log framework detection for first food only
+  if (food.name === 'Pizza' || Math.random() < 0.05) {
+    console.log(`🔍 [ScoreEngine] Food: ${food.name}, Framework: ${userFramework}`);
+    if (userFramework === 'tcm') {
+      console.log(`📊 [TCM Assessment]:`, JSON.stringify(user.tcmAssessment));
+    }
   }
 
   // Evaluate only the user's framework + safety (always applied)
@@ -52,6 +65,10 @@ const calculateFoodScore = async (user, food, options = {}) => {
     unaniResult = evaluateUnani(user, food);
   } else if (userFramework === 'tcm') {
     tcmResult = evaluateTCM(user, food);
+    // Debug: Log TCM scoring for first food
+    if (food.name === 'Pizza' || Math.random() < 0.05) {
+      console.log(`🎯 [TCM Score] ${food.name}: delta=${tcmResult.scoreDelta}, reasons=${tcmResult.reasons.length}`);
+    }
   } else if (userFramework === 'modern') {
     modernResult = evaluateModern(user, food);
   }

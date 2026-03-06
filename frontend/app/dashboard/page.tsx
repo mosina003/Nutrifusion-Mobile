@@ -8,7 +8,6 @@ import { Recommendations } from '@/components/dashboard/recommendations'
 import { DietPlanTimeline } from '@/components/dashboard/diet-plan-timeline'
 import { HealthInsights } from '@/components/dashboard/health-insights'
 import { YogaLifestyle } from '@/components/dashboard/yoga-lifestyle'
-import { ProgressCharts } from '@/components/dashboard/progress-charts'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
@@ -89,7 +88,6 @@ export default function DashboardPage() {
           <DietPlanTimeline />
           <HealthInsights />
           <YogaLifestyle />
-          <ProgressCharts />
         </div>
 
         {/* Footer CTA */}

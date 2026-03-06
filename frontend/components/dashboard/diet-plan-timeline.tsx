@@ -44,7 +44,18 @@ interface TCMHealthProfile {
   cold_heat: string
 }
 
-type HealthProfile = AyurvedaHealthProfile | UnaniHealthProfile | TCMHealthProfile
+// Modern health profile
+interface ModernHealthProfile {
+  bmi: number
+  bmi_category: string
+  bmr: number
+  tdee: number
+  recommended_calories: number
+  metabolic_risk_level: string
+  primary_goal?: string
+}
+
+type HealthProfile = AyurvedaHealthProfile | UnaniHealthProfile | TCMHealthProfile | ModernHealthProfile
 
 interface WeeklyPlanDay {
   day: number

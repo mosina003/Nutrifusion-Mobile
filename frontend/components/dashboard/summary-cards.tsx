@@ -157,7 +157,7 @@ export function SummaryCards() {
     <section className="mb-8">
       <h2 className="text-2xl font-bold text-slate-800 mb-6">Today's Overview</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Dosha Card - Flippable */}
+        {/* Constitution/BMI Card - Flippable */}
         <FlipCard
           front={
             <SummaryCard
@@ -169,10 +169,77 @@ export function SummaryCards() {
             />
           }
           back={
-            <div className={`${cardColors.dosha} rounded-3xl p-6 shadow-md h-full flex flex-col justify-center overflow-hidden`}>
-              {doshaBalance ? (
+            <div className={`${cardColors.dosha} rounded-3xl p-4 shadow-md h-full flex flex-col justify-center overflow-hidden`}>
+              {summaryData.dosha?.framework === 'modern' ? (
+                // Modern framework: Show comprehensive health metrics (compact)
+                <div className="w-full text-white space-y-2">
+                  {/* BMI Header */}
+                  <div className="text-center">
+                    <div className="text-2xl font-bold leading-tight">
+                      {summaryData.dosha?.bmi?.toFixed(1) || 'N/A'}
+                    </div>
+                    <div className="text-[10px] opacity-80 -mt-0.5">BMI · {summaryData.dosha?.value}</div>
+                  </div>
+                  
+                  {/* Metabolic Metrics */}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="bg-white/15 rounded-md p-1.5">
+                      <div className="text-[9px] opacity-70 leading-tight">BMR</div>
+                      <div className="text-xs font-semibold leading-tight">{summaryData.dosha?.bmr || 'N/A'} cal</div>
+                    </div>
+                    <div className="bg-white/15 rounded-md p-1.5">
+                      <div className="text-[9px] opacity-70 leading-tight">TDEE</div>
+                      <div className="text-xs font-semibold leading-tight">{summaryData.dosha?.tdee || 'N/A'} cal</div>
+                    </div>
+                  </div>
+                  
+                  {/* Macro Split */}
+                  {summaryData.dosha?.macros && (
+                    <div className="bg-white/15 rounded-md p-1.5">
+                      <div className="text-[9px] opacity-80 mb-0.5 leading-tight">Daily Macros</div>
+                      <div className="flex justify-between text-[10px] leading-tight">
+                        <span>P: {summaryData.dosha.macros.protein?.grams || 0}g</span>
+                        <span>C: {summaryData.dosha.macros.carbs?.grams || 0}g</span>
+                        <span>F: {summaryData.dosha.macros.fats?.grams || 0}g</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Health Metrics */}
+                  {summaryData.dosha?.healthMetrics && (
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between text-[10px] leading-tight">
+                        <span className="opacity-70">Sleep:</span>
+                        <span className="font-medium capitalize">{summaryData.dosha.healthMetrics.sleep_quality || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px] leading-tight">
+                        <span className="opacity-70">Stress:</span>
+                        <span className="font-medium capitalize">{summaryData.dosha.healthMetrics.stress_level || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px] leading-tight">
+                        <span className="opacity-70">Activity:</span>
+                        <span className="font-medium capitalize">{summaryData.dosha.healthMetrics.activity_level?.replace('_', ' ') || 'N/A'}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Metabolic Risk Badge */}
+                  <div className={`rounded-md p-1.5 text-center ${
+                    summaryData.dosha?.metabolicRisk === 'high' ? 'bg-red-500/30' :
+                    summaryData.dosha?.metabolicRisk === 'moderate' ? 'bg-yellow-500/30' :
+                    'bg-green-500/30'
+                  }`}>
+                    <div className="text-[10px] font-semibold capitalize leading-tight">
+                      {summaryData.dosha?.metabolicRisk || 'Low'} Metabolic Risk
+                    </div>
+                  </div>
+                  
+                  <div className="text-[9px] text-white/70 text-center pt-0.5 leading-tight">Click to flip back</div>
+                </div>
+              ) : doshaBalance ? (
+                // Traditional frameworks: Show dosha/humor/pattern balance
                 <div className="w-full">
-                  <div className="text-xl font-bold text-white mb-4 text-center">{doshaBalance.dominant}</div>
+                  <div className="text-sm font-bold text-white mb-3 text-center">{doshaBalance.dominant}</div>
                   <ConstitutionMeter balance={doshaBalance} />
                   <div className="text-xs text-white/70 mt-3 text-center">Click to flip back</div>
                 </div>

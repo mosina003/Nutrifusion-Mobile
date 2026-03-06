@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 
 interface ConstitutionBalance {
-  framework: 'ayurveda' | 'unani' | 'tcm'
+  framework: 'ayurveda' | 'unani' | 'tcm' | 'modern'
   // Ayurveda
   vata?: number
   pitta?: number
@@ -19,6 +19,11 @@ interface ConstitutionBalance {
   secondary_pattern?: string | null
   cold_heat?: string
   severity?: string
+  // Modern
+  bmi?: number
+  bmi_category?: string
+  metabolic_risk_level?: string
+  recommended_calories?: number
   // Common
   dominant: string
 }
@@ -137,9 +142,9 @@ export function ConstitutionMeter({ balance }: ConstitutionMeterProps) {
             transition={{ delay: index * 0.1, duration: 0.5 }}
             className="space-y-1 w-full"
           >
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-white">{pattern.name}</span>
-              <span className="text-white/90 font-medium">{pattern.value}</span>
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold text-white/80">{pattern.name}</span>
+              <span className="text-white font-bold">{pattern.value}</span>
             </div>
           </motion.div>
         ))}
@@ -157,6 +162,59 @@ export function ConstitutionMeter({ balance }: ConstitutionMeterProps) {
               : balance.cold_heat === 'Heat'
               ? '🔥 Heat pattern - Focus on cooling foods'
               : '⚖️ Balanced pattern - Maintain harmony'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Modern display
+  if (balance.framework === 'modern') {
+    const getBmiEmoji = (category: string) => {
+      if (!category) return '⚖️'
+      const cat = category.toLowerCase()
+      if (cat.includes('underweight')) return '⬇️'
+      if (cat.includes('normal')) return '✅'
+      if (cat.includes('overweight')) return '⬆️'
+      if (cat.includes('obese')) return '🔴'
+      return '⚖️'
+    }
+
+    const getRiskEmoji = (level: string) => {
+      if (level === 'low') return '🟢'
+      if (level === 'moderate') return '🟡'
+      if (level === 'high') return '🔴'
+      return '⚪'
+    }
+
+    const metrics = [
+      { name: 'BMI Status', value: balance.bmi_category || 'Unknown', emoji: getBmiEmoji(balance.bmi_category || '') },
+      { name: 'BMI Value', value: balance.bmi?.toFixed(1) || 'N/A', emoji: '📊' },
+      { name: 'Metabolic Risk', value: (balance.metabolic_risk_level || 'low').charAt(0).toUpperCase() + (balance.metabolic_risk_level || 'low').slice(1), emoji: getRiskEmoji(balance.metabolic_risk_level || 'low') }
+    ]
+
+    return (
+      <div className="w-full max-w-full space-y-2 overflow-hidden">
+        {metrics.map((metric, index) => (
+          <motion.div
+            key={metric.name}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.1, duration: 0.5 }}
+            className="space-y-1 w-full"
+          >
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold text-white/80">{metric.name}</span>
+              <span className="text-white font-bold">{metric.emoji} {metric.value}</span>
+            </div>
+          </motion.div>
+        ))}
+
+        <div className="mt-2.5 p-2 bg-white/10 rounded-lg border border-white/20 w-full">
+          <p className="text-[10px] text-white/90 leading-relaxed">
+            {balance.recommended_calories 
+              ? `🎯 Target: ${balance.recommended_calories} kcal/day`
+              : '📊 Evidence-based nutrition plan'}
           </p>
         </div>
       </div>

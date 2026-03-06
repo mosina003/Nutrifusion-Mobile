@@ -61,7 +61,6 @@ export function Recommendations() {
                 <div key={idx} className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between mb-2">
                     <h4 className="font-semibold text-slate-800">{food.name}</h4>
-                    <span className="bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-full">{food.score}%</span>
                   </div>
                   <div className="flex gap-2">
                     {food.tags.map((tag: string, i: number) => (

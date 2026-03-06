@@ -24,30 +24,188 @@ if (process.env.GROQ_API_KEY) {
 /**
  * Helper to get user's dominant dosha from assessment or user profile
  */
-const getDominantDosha = (assessment, userPrakriti) => {
+const getDominantDosha = (assessment, userPrakriti, user = null) => {
+  // Helper function to calculate BMR, TDEE, BMI for any framework
+  const calculateMetabolicMetrics = (user, assessment) => {
+    if (!user) return {};
+
+    let age = user.age || 30;
+    let gender = user.gender || 'female';
+    let height = user.height || 165;
+    let weight = user.weight || 65;
+    let activityLevel = 'moderately_active';
+
+    // Try to get values from assessment responses first
+    if (assessment?.responses) {
+      age = parseInt(assessment.responses.age?.value) || age;
+      gender = assessment.responses.gender?.value || gender;
+      height = parseFloat(assessment.responses.height?.value) || height;
+      weight = parseFloat(assessment.responses.weight?.value) || weight;
+      activityLevel = assessment.responses.activity_level?.value || activityLevel;
+    }
+
+    // Calculate BMI
+    let bmi = weight / ((height / 100) ** 2);
+    bmi = Math.round(bmi * 10) / 10;
+
+    // Calculate BMR using Mifflin-St Jeor Equation
+    let bmr;
+    if (gender.toLowerCase() === 'male') {
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5;
+    } else {
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) - 161;
+    }
+
+    // Calculate TDEE
+    const activityLevels = {
+      'sedentary': 1.2,
+      'lightly_active': 1.375,
+      'moderately_active': 1.55,
+      'very_active': 1.725,
+      'extremely_active': 1.9
+    };
+    const activityMultiplier = activityLevels[activityLevel] || 1.55;
+    const tdee = bmr * activityMultiplier;
+
+    // Calculate BMI category
+    let bmiCategory = 'normal';
+    if (bmi < 18.5) bmiCategory = 'underweight';
+    else if (bmi >= 25 && bmi < 30) bmiCategory = 'overweight';
+    else if (bmi >= 30) bmiCategory = 'obese';
+
+    // Calculate metabolic risk level
+    let metabolicRisk = 'low';
+    if (bmi >= 30) metabolicRisk = 'high';
+    else if (bmi >= 25) metabolicRisk = 'moderate';
+
+    return {
+      bmi: Math.round(bmi * 10) / 10,
+      bmiCategory: bmiCategory,
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee),
+      metabolicRisk: metabolicRisk,
+      recommendedCalories: Math.round(tdee)
+    };
+  };
+
   // Priority 1: Use assessment data if available (framework-specific)
   if (assessment && assessment.scores) {
+    // Calculate metabolic metrics for all frameworks
+    const metabolicMetrics = calculateMetabolicMetrics(user, assessment);
+
     if (assessment.framework === 'ayurveda') {
       // Use vikriti (current state) as dominant
       const vikriti = assessment.scores.vikriti;
       if (vikriti && vikriti.dominant) {
         const doshaName = vikriti.dominant.charAt(0).toUpperCase() + vikriti.dominant.slice(1);
         const percentage = vikriti.scores ? vikriti.scores[vikriti.dominant] : 0;
-        return { name: doshaName, percentage, source: 'assessment' };
+        return { 
+          name: doshaName, 
+          percentage, 
+          source: 'assessment',
+          ...metabolicMetrics
+        };
       }
       // Fallback to prakriti if vikriti not available
       const prakriti = assessment.scores.prakriti;
       if (prakriti && prakriti.primary) {
         const doshaName = prakriti.primary.charAt(0).toUpperCase() + prakriti.primary.slice(1);
         const percentage = prakriti.percentages ? prakriti.percentages[prakriti.primary] : 0;
-        return { name: doshaName, percentage, source: 'assessment' };
+        return { 
+          name: doshaName, 
+          percentage, 
+          source: 'assessment',
+          ...metabolicMetrics
+        };
       }
     } else if (assessment.framework === 'unani') {
       const mizaj = assessment.scores.primary_mizaj || assessment.scores.mizaj;
-      return { name: mizaj || 'Unknown', percentage: 0, source: 'assessment' };
+      return { 
+        name: mizaj || 'Unknown', 
+        percentage: 0, 
+        source: 'assessment',
+        ...metabolicMetrics
+      };
     } else if (assessment.framework === 'tcm') {
       const pattern = assessment.scores.primary_pattern;
-      return { name: pattern || 'Unknown', percentage: 0, source: 'assessment' };
+      return { 
+        name: pattern || 'Unknown', 
+        percentage: 0, 
+        source: 'assessment',
+        ...metabolicMetrics
+      };
+    } else if (assessment.framework === 'modern') {
+      // Modern framework: Comprehensive health profile
+      let bmi = assessment.scores.bmi || 0;
+      let bmr = assessment.scores.bmr || 0;
+      let tdee = assessment.scores.tdee || 0;
+      
+      // Fallback: Calculate BMR and TDEE if missing (for old assessments)
+      if ((!bmr || !tdee) && assessment.responses) {
+        const age = parseInt(assessment.responses.age?.value) || 30;
+        const gender = assessment.responses.gender?.value || 'female';
+        const height = parseFloat(assessment.responses.height?.value) || 165;
+        const weight = parseFloat(assessment.responses.weight?.value) || 65;
+        const activityLevel = assessment.responses.activity_level?.value || 'moderately_active';
+        
+        // Calculate BMR using Mifflin-St Jeor Equation
+        if (gender === 'male') {
+          bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5;
+        } else {
+          bmr = (10 * weight) + (6.25 * height) - (5 * age) - 161;
+        }
+        
+        // Calculate TDEE
+        const activityLevels = {
+          'sedentary': 1.2,
+          'lightly_active': 1.375,
+          'moderately_active': 1.55,
+          'very_active': 1.725,
+          'extremely_active': 1.9
+        };
+        const activityMultiplier = activityLevels[activityLevel] || 1.55;
+        tdee = bmr * activityMultiplier;
+        
+        // Round values
+        bmr = Math.round(bmr);
+        tdee = Math.round(tdee);
+        
+        // Calculate BMI if missing
+        if (!bmi) {
+          bmi = weight / ((height / 100) ** 2);
+          bmi = Math.round(bmi * 10) / 10;
+        }
+        
+        console.log('📊 Calculated missing metrics - BMR:', bmr, 'TDEE:', tdee, 'BMI:', bmi);
+      }
+      
+      const bmiCategory = assessment.scores.bmi_category || 'Unknown';
+      const recommendedCalories = assessment.scores.recommended_calories || tdee;
+      const macros = assessment.scores.macro_split || {};
+      const healthMetrics = assessment.scores.health_metrics || {};
+      const riskFlags = assessment.scores.risk_flags || [];
+      
+      // Calculate metabolic risk level
+      let metabolicRisk = 'low';
+      if (bmi >= 30 || riskFlags.some(f => f.severity === 'high')) metabolicRisk = 'high';
+      else if (bmi >= 25 || riskFlags.some(f => f.severity === 'moderate')) metabolicRisk = 'moderate';
+      
+      // Format BMI category for display
+      const categoryDisplay = bmiCategory.charAt(0).toUpperCase() + bmiCategory.slice(1);
+      
+      return { 
+        name: categoryDisplay, 
+        percentage: Math.round(bmi * 10) / 10,
+        source: 'assessment',
+        metabolicRisk: metabolicRisk,
+        bmi: bmi,
+        bmr: bmr,
+        tdee: tdee,
+        recommendedCalories: recommendedCalories,
+        macros: macros,
+        healthMetrics: healthMetrics,
+        riskFlags: riskFlags
+      };
     }
   }
   
@@ -75,10 +233,106 @@ const getDominantDosha = (assessment, userPrakriti) => {
 const getHealthInsights = (user, healthProfile, latestAssessment) => {
   const insights = [];
   
-  // Dosha-based insights
-  const dominant = getDominantDosha(latestAssessment, user.prakriti);
+  // Get dominant constitution/health status
+  const dominant = getDominantDosha(latestAssessment, user.prakriti, user);
   
-  if (dominant.name !== 'Unknown') {
+  // Modern framework insights (based on metabolic health)
+  if (latestAssessment?.framework === 'modern' && dominant.riskFlags) {
+    // High priority risk flags
+    const highRisks = dominant.riskFlags.filter(f => f.severity === 'high');
+    if (highRisks.length > 0) {
+      insights.push({
+        type: 'warning',
+        title: 'Health Alert',
+        description: highRisks[0].message,
+        icon: 'AlertCircle',
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-200',
+        textColor: 'text-red-700'
+      });
+    }
+    
+    // Sleep quality insight
+    if (dominant.healthMetrics?.sleep_quality === 'poor' || dominant.healthMetrics?.sleep_quality === 'very_poor') {
+      insights.push({
+        type: 'tip',
+        title: 'Improve Sleep Quality',
+        description: 'Poor sleep affects metabolism and hunger hormones. Aim for 7-9 hours of quality sleep.',
+        icon: 'Moon',
+        bgColor: 'bg-indigo-50',
+        borderColor: 'border-indigo-200',
+        textColor: 'text-indigo-700'
+      });
+    }
+    
+    // Stress level insight
+    if (dominant.healthMetrics?.stress_level === 'high' || dominant.healthMetrics?.stress_level === 'very_high') {
+      insights.push({
+        type: 'tip',
+        title: 'Manage Stress Levels',
+        description: 'High stress can lead to emotional eating. Try meditation, yoga, or a short walk.',
+        icon: 'Heart',
+        bgColor: 'bg-purple-50',
+        borderColor: 'border-purple-200',
+        textColor: 'text-purple-700'
+      });
+    }
+    
+    // Activity level insight  
+    if (dominant.healthMetrics?.activity_level === 'sedentary') {
+      insights.push({
+        type: 'tip',
+        title: 'Increase Physical Activity',
+        description: 'Even 20 minutes of walking daily can significantly improve your metabolic health.',
+        icon: 'TrendingUp',
+        bgColor: 'bg-green-50',
+        borderColor: 'border-green-200',
+        textColor: 'text-green-700'
+      });
+    }
+    
+    // Metabolic risk insight
+    if (dominant.metabolicRisk === 'high') {
+      insights.push({
+        type: 'warning',
+        title: 'High Metabolic Risk',
+        description: 'Focus on whole foods, reduce processed carbs, and maintain consistent meal timing.',
+        icon: 'AlertTriangle',
+        bgColor: 'bg-orange-50',
+        borderColor: 'border-orange-200',
+        textColor: 'text-orange-700'
+      });
+    } else if (dominant.metabolicRisk === 'low' && insights.length < 2) {
+      insights.push({
+        type: 'success',
+        title: 'Great Metabolic Health',
+        description: 'Your metabolic markers are looking good! Keep up your healthy lifestyle habits.',
+        icon: 'CheckCircle',
+        bgColor: 'bg-emerald-50',
+        borderColor: 'border-emerald-200',
+        textColor: 'text-emerald-700'
+      });
+    }
+    
+    // Macro balance insight
+    if (dominant.macros && dominant.macros.protein) {
+      const proteinGrams = dominant.macros.protein.grams;
+      if (proteinGrams < 50) {
+        insights.push({
+          type: 'tip',
+          title: 'Increase Protein Intake',
+          description: `Your protein target is ${proteinGrams}g. Include lean meats, legumes, or dairy in each meal.`,
+          icon: 'Drumstick',
+          bgColor: 'bg-blue-50',
+          borderColor: 'border-blue-200',
+          textColor: 'text-blue-700'
+        });
+      }
+    }
+  }
+  
+  // Traditional framework insights (Ayurveda/Unani/TCM)
+  else if (dominant.name !== 'Unknown') {
     
     if (dominant.name === 'Pitta' && dominant.percentage > 40) {
       insights.push({
@@ -212,8 +466,8 @@ const getHealthInsights = (user, healthProfile, latestAssessment) => {
 /**
  * Helper to get yoga recommendations based on dosha
  */
-const getYogaRecommendations = (assessment, prakriti) => {
-  const dominant = getDominantDosha(assessment, prakriti);
+const getYogaRecommendations = (assessment, prakriti, user) => {
+  const dominant = getDominantDosha(assessment, prakriti, user);
   
   const yogaByDosha = {
     Pitta: [
@@ -239,8 +493,8 @@ const getYogaRecommendations = (assessment, prakriti) => {
 /**
  * Helper to generate lifestyle tips based on dosha
  */
-const getLifestyleTips = (assessment, prakriti) => {
-  const dominant = getDominantDosha(assessment, prakriti);
+const getLifestyleTips = (assessment, prakriti, user) => {
+  const dominant = getDominantDosha(assessment, prakriti, user);
   
   const tipsByDosha = {
     Pitta: {
@@ -593,6 +847,9 @@ router.get('/', protect, authorize('user'), async (req, res) => {
     
     // If we have a recent assessment, use its scores for prakriti/dosha data
     if (latestAssessment && latestAssessment.scores) {
+      // Set framework explicitly for scoring engine
+      userProfile.assessmentFramework = latestAssessment.framework;
+      
       if (latestAssessment.framework === 'ayurveda') {
         userProfile.prakriti = latestAssessment.scores.prakriti?.percentages || user.prakriti;
         userProfile.vikriti = latestAssessment.scores.vikriti?.scores;
@@ -628,14 +885,39 @@ router.get('/', protect, authorize('user'), async (req, res) => {
       console.log('✅ Got food recommendations:', foodRecs.recommendations.length);
       console.log('📊 Sample scores:', foodRecs.recommendations.slice(0, 3).map(f => ({ name: f.name, score: f.finalScore })));
       
-      recommendedFoods = foodRecs.recommendations.map(food => ({
-        name: food.name,
-        tags: [
-          food.ayurveda?.taste?.[0] || 'Balanced',
-          food.ayurveda?.quality?.[0] || 'Nourishing'
-        ],
-        score: Math.round(food.finalScore)
-      }));
+      // Determine framework for tag generation
+      const framework = latestAssessment?.framework || 'ayurveda';
+      
+      recommendedFoods = foodRecs.recommendations.map(food => {
+        let tags = [];
+        
+        // Framework-specific tags
+        if (framework === 'tcm') {
+          // TCM tags: thermal nature and flavor
+          tags = [
+            food.tcm?.thermalNature || 'Neutral',
+            food.tcm?.flavor?.[0] || 'Sweet'
+          ];
+        } else if (framework === 'unani') {
+          // Unani tags: temperament
+          tags = [
+            food.unani?.temperament || 'Balanced',
+            food.unani?.quality || 'Nourishing'
+          ];
+        } else {
+          // Ayurveda tags (default)
+          tags = [
+            food.ayurveda?.taste?.[0] || 'Balanced',
+            food.ayurveda?.quality?.[0] || 'Nourishing'
+          ];
+        }
+        
+        return {
+          name: food.name,
+          tags: tags,
+          score: Math.round(food.finalScore)
+        };
+      });
       
       // Get foods to avoid (foods with low scores or contraindications)
       const avoidRecs = await recommendFoodService.getPersonalizedRecommendations(userProfile, {
@@ -737,7 +1019,7 @@ router.get('/', protect, authorize('user'), async (req, res) => {
     }
     
     // Calculate summary cards data
-    const dominant = getDominantDosha(latestAssessment, user.prakriti);
+    const dominant = getDominantDosha(latestAssessment, user.prakriti, user);
     const conditionsCount = (user.chronicConditions || []).length;
     
     console.log('📊 Dominant dosha calculation:', {
@@ -784,6 +1066,8 @@ router.get('/', protect, authorize('user'), async (req, res) => {
       constitutionLabel = 'Dominant Humor';
     } else if (framework === 'tcm') {
       constitutionLabel = 'Primary Pattern';
+    } else if (framework === 'modern') {
+      constitutionLabel = 'BMI Status';
     }
     
     const summaryCards = {
@@ -792,7 +1076,13 @@ router.get('/', protect, authorize('user'), async (req, res) => {
         label: constitutionLabel,
         trend: doshaTrend,
         bgColor: 'bg-gradient-to-br from-orange-400 to-orange-500',
-        framework: framework
+        framework: framework,
+        // Include metabolic metrics for all frameworks
+        bmi: dominant.bmi,
+        bmr: dominant.bmr,
+        tdee: dominant.tdee,
+        metabolicRisk: dominant.metabolicRisk,
+        bmiCategory: dominant.bmiCategory
       },
       conditions: {
         value: conditionsCount,
@@ -816,8 +1106,8 @@ router.get('/', protect, authorize('user'), async (req, res) => {
     const healthInsights = getHealthInsights(user, healthProfile, latestAssessment);
     
     // Get yoga recommendations
-    const yogaPoses = getYogaRecommendations(latestAssessment, user.prakriti);
-    const lifestyleTips = getLifestyleTips(latestAssessment, user.prakriti);
+    const yogaPoses = getYogaRecommendations(latestAssessment, user.prakriti, user);
+    const lifestyleTips = getLifestyleTips(latestAssessment, user.prakriti, user);
     
     // Calculate progress data
     const progressData = await calculateProgressData(user, allDietPlans, allAssessments, userStats);
@@ -958,6 +1248,31 @@ router.get('/dosha-balance', protect, async (req, res) => {
           cold_heat: scores.cold_heat || 'Balanced',
           severity: scores.severity || 'Mild',
           dominant: scores.primary_pattern || 'Unknown',
+          source: 'assessment',
+          lastUpdated: new Date()
+        }
+      });
+    }
+    
+    // Handle Modern framework
+    else if (framework === 'modern') {
+      const scores = assessment.scores;
+      
+      return res.json({
+        success: true,
+        data: {
+          framework: 'modern',
+          bmi: scores.bmi || 0,
+          bmi_category: scores.bmi_category || 'Unknown',
+          bmr: scores.bmr || 0,
+          tdee: scores.tdee || 0,
+          recommended_calories: scores.recommended_calories || 0,
+          metabolic_risk_level: scores.metabolic_risk_level || 'low',
+          macro_split: scores.macro_split || {},
+          health_metrics: scores.health_metrics || {},
+          risk_flags: scores.risk_flags || [],
+          primary_goal: scores.primary_goal || null,
+          dominant: scores.bmi_category || 'Normal Weight',
           source: 'assessment',
           lastUpdated: new Date()
         }

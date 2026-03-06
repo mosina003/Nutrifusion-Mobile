@@ -38,6 +38,7 @@ export default function AssessmentForm({ framework, onBack, onComplete }: Assess
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [responses, setResponses] = useState<Record<string, any>>({})
+  const [otherTexts, setOtherTexts] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -196,45 +197,109 @@ export default function AssessmentForm({ framework, onBack, onComplete }: Assess
           )
 
         case 'select':
+          const hasOtherOption = currentQuestion.options?.some((opt: any) => opt.value === 'other')
+          const isOtherSelected = currentResponse?.value === 'other'
           return (
-            <RadioGroup
-              value={currentResponse?.value || ''}
-              onValueChange={(value) => handleResponse(currentQuestion.id, { value })}
-            >
+            <div className="space-y-4">
+              <RadioGroup
+                value={currentResponse?.value || ''}
+                onValueChange={(value) => {
+                  handleResponse(currentQuestion.id, { 
+                    value,
+                    otherText: value === 'other' ? (otherTexts[currentQuestion.id] || '') : undefined
+                  })
+                }}
+              >
+                <div className="space-y-3">
+                  {currentQuestion.options?.map((option: any) => (
+                    <div key={option.value} className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-accent transition-colors">
+                      <RadioGroupItem value={option.value} id={option.value} />
+                      <Label htmlFor={option.value} className="flex-1 cursor-pointer text-base leading-relaxed">
+                        {option.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </RadioGroup>
+              {hasOtherOption && isOtherSelected && (
+                <div className="pl-4 space-y-2">
+                  <Label htmlFor={`${currentQuestion.id}-other-input`} className="text-sm font-medium">
+                    Please specify:
+                  </Label>
+                  <Input
+                    id={`${currentQuestion.id}-other-input`}
+                    value={otherTexts[currentQuestion.id] || ''}
+                    onChange={(e) => {
+                      const text = e.target.value
+                      setOtherTexts(prev => ({ ...prev, [currentQuestion.id]: text }))
+                      handleResponse(currentQuestion.id, { 
+                        value: 'other',
+                        otherText: text
+                      })
+                    }}
+                    placeholder="Please specify your answer"
+                    className="text-base"
+                  />
+                </div>
+              )}
+            </div>
+          )
+
+        case 'multiselect':
+          const selectedValues = currentResponse?.value || []
+          const hasMultiOtherOption = currentQuestion.options?.some((opt: any) => opt.value === 'other')
+          const isMultiOtherSelected = selectedValues.includes('other')
+          return (
+            <div className="space-y-4">
               <div className="space-y-3">
                 {currentQuestion.options?.map((option: any) => (
                   <div key={option.value} className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-accent transition-colors">
-                    <RadioGroupItem value={option.value} id={option.value} />
+                    <Checkbox
+                      id={option.value}
+                      checked={selectedValues.includes(option.value)}
+                      onCheckedChange={(checked) => {
+                        const newValues = checked
+                          ? [...selectedValues, option.value]
+                          : selectedValues.filter((v: string) => v !== option.value)
+                        
+                        // Clear other text if unchecking 'other'
+                        if (!checked && option.value === 'other') {
+                          setOtherTexts(prev => ({ ...prev, [currentQuestion.id]: '' }))
+                        }
+                        
+                        handleResponse(currentQuestion.id, { 
+                          value: newValues,
+                          otherText: newValues.includes('other') ? (otherTexts[currentQuestion.id] || '') : undefined
+                        })
+                      }}
+                    />
                     <Label htmlFor={option.value} className="flex-1 cursor-pointer text-base leading-relaxed">
                       {option.label}
                     </Label>
                   </div>
                 ))}
               </div>
-            </RadioGroup>
-          )
-
-        case 'multiselect':
-          const selectedValues = currentResponse?.value || []
-          return (
-            <div className="space-y-3">
-              {currentQuestion.options?.map((option: any) => (
-                <div key={option.value} className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-accent transition-colors">
-                  <Checkbox
-                    id={option.value}
-                    checked={selectedValues.includes(option.value)}
-                    onCheckedChange={(checked) => {
-                      const newValues = checked
-                        ? [...selectedValues, option.value]
-                        : selectedValues.filter((v: string) => v !== option.value)
-                      handleResponse(currentQuestion.id, { value: newValues })
-                    }}
-                  />
-                  <Label htmlFor={option.value} className="flex-1 cursor-pointer text-base leading-relaxed">
-                    {option.label}
+              {hasMultiOtherOption && isMultiOtherSelected && (
+                <div className="pl-4 space-y-2">
+                  <Label htmlFor={`${currentQuestion.id}-other-input`} className="text-sm font-medium">
+                    Please specify:
                   </Label>
+                  <Input
+                    id={`${currentQuestion.id}-other-input`}
+                    value={otherTexts[currentQuestion.id] || ''}
+                    onChange={(e) => {
+                      const text = e.target.value
+                      setOtherTexts(prev => ({ ...prev, [currentQuestion.id]: text }))
+                      handleResponse(currentQuestion.id, { 
+                        value: selectedValues,
+                        otherText: text
+                      })
+                    }}
+                    placeholder="Please specify your answer"
+                    className="text-base"
+                  />
                 </div>
-              ))}
+              )}
             </div>
           )
 

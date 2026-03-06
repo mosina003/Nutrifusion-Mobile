@@ -12,6 +12,21 @@
 
 const { scoreFood, scoreAllFoods } = require('./modernDietEngine');
 const { generateWeeklyPlan } = require('./modernMealPlan');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// Initialize Gemini AI for personalized explanations
+let geminiModel = null;
+if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const genAI = new GoogleGenerativeAI(apiKey);
+    // Use gemini-1.5-pro for stable, reliable API access
+    geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    console.log('✅ Gemini AI initialized for Modern diet plan explanations (gemini-1.5-pro)');
+  } catch (error) {
+    console.warn('⚠️ Gemini AI unavailable, using template-based explanations:', error.message);
+  }
+}
 
 /**
  * Validate clinical profile has required fields
@@ -90,13 +105,17 @@ const _applyPreferences = (foods, preferences = {}) => {
 };
 
 /**
- * Generate reasoning and summary for the diet plan
+ * Generate reasoning and summary for the diet plan using AI or template
  * @param {Object} clinicalProfile - Clinical profile
  * @param {Object} categorizedFoods - Categorized scored foods
- * @returns {Object} Reasoning object
+ * @returns {Promise<Object>} Reasoning object with AI-generated summary
  * @private
  */
-const _generateReasoning = (clinicalProfile, categorizedFoods) => {
+const _generateReasoning = async (clinicalProfile, categorizedFoods) => {
+  console.log('\n🔵 === _generateReasoning() CALLED ===');
+  console.log('🔵 Clinical profile received:', !!clinicalProfile);
+  console.log('🔵 Categorized foods received:', !!categorizedFoods);
+  
   const reasoning = {
     primary_focus: [],
     metabolic_considerations: [],
@@ -106,6 +125,7 @@ const _generateReasoning = (clinicalProfile, categorizedFoods) => {
   
   // Primary focus based on goals
   const goals = clinicalProfile.goals || [];
+  console.log('🔵 Goals:', goals);
   if (goals.includes('weight_loss')) {
     reasoning.primary_focus.push('Calorie-controlled, high-protein, high-fiber foods for sustainable weight loss');
   }
@@ -165,32 +185,133 @@ const _generateReasoning = (clinicalProfile, categorizedFoods) => {
   const bmiCategory = clinicalProfile.anthropometric?.bmi_category || 'normal';
   const primaryGoal = (goals[0] || 'metabolic_health').replace('_', ' ');
   
+  // Create friendly, conversational summary
   const summaryParts = [];
   
-  // BMI and metabolic status
-  summaryParts.push(`Your BMI is ${bmi.toFixed(1)} (${bmiCategory}), with ${riskLevel || 'low'} metabolic risk.`);
+  // Opening with BMI and metabolic status - make it warm and encouraging
+  const bmiDescriptions = {
+    'underweight': `your BMI of ${bmi.toFixed(1)} is on the lower side`,
+    'normal': `you're maintaining a healthy BMI of ${bmi.toFixed(1)}`,
+    'overweight': `your BMI is ${bmi.toFixed(1)}, which gives us room to work together on some positive changes`,
+    'obese': `with a BMI of ${bmi.toFixed(1)}, we'll focus on sustainable, healthy improvements`
+  };
   
-  // Primary focus
+  const riskDescriptions = {
+    'low': `which is great news for your overall health`,
+    'moderate': `and we'll work on optimizing your metabolic health`,
+    'high': `but this plan will help support better metabolic balance`,
+    'very_high': `which makes this personalized nutrition plan especially important`
+  };
+  
+  const bmiText = bmiDescriptions[bmiCategory] || `your BMI is ${bmi.toFixed(1)}`;
+  const riskText = riskDescriptions[riskLevel] || 'and we can support your health journey';
+  
+  summaryParts.push(`I've created this 7-day plan just for you. Based on your profile, ${bmiText}, ${riskText}.`);
+  
+  // Primary focus - make it goal-oriented and motivating
   if (reasoning.primary_focus.length > 0) {
-    summaryParts.push(`This plan focuses on ${primaryGoal}, emphasizing ${reasoning.primary_focus[0].toLowerCase()}.`);
+    const goalDescriptions = {
+      'weight loss': 'helping you reach a healthy weight',
+      'muscle gain': 'supporting your muscle-building goals',
+      'metabolic health': 'optimizing your overall wellness',
+      'weight management': 'maintaining your ideal weight',
+      'disease prevention': 'supporting your long-term health'
+    };
+    
+    const goalText = goalDescriptions[primaryGoal] || primaryGoal;
+    summaryParts.push(`The meals are designed with ${goalText} in mind, featuring ${reasoning.primary_focus[0].toLowerCase()}.`);
   }
   
-  // Metabolic considerations
+  // Metabolic considerations - frame positively
   if (reasoning.metabolic_considerations.length > 0) {
-    summaryParts.push(reasoning.metabolic_considerations[0] + '.');
+    summaryParts.push(`To support your body's needs, I've focused on ${reasoning.metabolic_considerations[0].toLowerCase()}.`);
   }
   
-  // Dietary adjustments
+  // Dietary adjustments - show personalization
   if (reasoning.dietary_adjustments.length > 0) {
-    summaryParts.push('Dietary adjustments include ' + reasoning.dietary_adjustments[0].toLowerCase() + '.');
+    summaryParts.push(`I've also tailored the plan by ${reasoning.dietary_adjustments[0].toLowerCase()}.`);
   }
   
-  // Lifestyle support
+  // Lifestyle support - encouraging tone
   if (reasoning.lifestyle_recommendations.length > 0) {
-    summaryParts.push('For optimal results, ' + reasoning.lifestyle_recommendations[0].toLowerCase() + '.');
+    summaryParts.push(`For the best results, consider ${reasoning.lifestyle_recommendations[0].toLowerCase()}.`);
   }
   
-  reasoning.constitution_summary = summaryParts.join(' ');
+  // Add encouraging closing
+  summaryParts.push(`Remember, this is a starting point - we can adjust it as you progress!`);
+  
+  // Template-based summary as base
+  const templateSummary = summaryParts.join(' ');
+  
+  // Try to enhance with Gemini AI for more natural, personalized explanation
+  console.log('🔍 DEBUG: Checking Gemini model availability...');
+  console.log('🔍 DEBUG: geminiModel exists?', !!geminiModel);
+  console.log('🔍 DEBUG: geminiModel type:', typeof geminiModel);
+  
+  if (geminiModel) {
+    try {
+      console.log('🤖 Attempting AI-generated explanation...');
+      console.log('🔍 DEBUG: Template summary (fallback):', templateSummary);
+      
+      const focusAreas = [
+        ...reasoning.primary_focus,
+        ...reasoning.metabolic_considerations,
+        ...reasoning.dietary_adjustments,
+        ...reasoning.lifestyle_recommendations
+      ].filter(f => f).map(f => '- ' + f).join('\n');
+      
+      const prompt = `You are a friendly, professional nutritionist creating a personalized diet plan explanation.
+
+Patient Profile:
+- BMI: ${bmi.toFixed(1)} (${bmiCategory})
+- Metabolic Risk: ${riskLevel || 'low'}
+- Primary Goal: ${primaryGoal}
+- Medical Conditions: ${riskFlags.join(', ') || 'none'}
+- Dietary Restrictions: ${(clinicalProfile.dietary_restrictions?.allergies || []).join(', ') || 'none'}
+
+Key Focus Areas:
+${focusAreas || 'General health maintenance'}
+
+Write a warm, personalized 2-3 sentence explanation of why this diet plan is tailored for this person. Be conversational, encouraging, and specific to their health profile. Focus on benefits and how it supports their goals.`;
+
+      console.log('📝 Sending prompt to Gemini AI...');
+      console.log('🔍 DEBUG: Prompt length:', prompt.length);
+      
+      const result = await geminiModel.generateContent(prompt);
+      console.log('🔍 DEBUG: Received result from geminiModel');
+      console.log('🔍 DEBUG: Result object:', JSON.stringify(result, null, 2));
+      
+      const aiSummary = result.response.text();
+      console.log('🔍 DEBUG: AI Summary:', aiSummary);
+      console.log('🔍 DEBUG: AI Summary length:', aiSummary?.length);
+      
+      if (aiSummary && aiSummary.trim()) {
+        reasoning.constitution_summary = aiSummary.trim();
+        console.log('✅ AI-generated diet plan explanation');
+        console.log('✅ Final reasoning.constitution_summary:', reasoning.constitution_summary);
+      } else {
+        reasoning.constitution_summary = templateSummary;
+        console.log('⚠️ AI returned empty, using template explanation');
+      }
+    } catch (error) {
+      console.error('❌ AI enhancement failed - Full error details:');
+      console.error('   Error message:', error.message);
+      console.error('   Error name:', error.name);
+      console.error('   Error stack:', error.stack);
+      if (error.response) {
+        console.error('   Error response:', JSON.stringify(error.response, null, 2));
+      }
+      reasoning.constitution_summary = templateSummary;
+      console.log('⚠️ Falling back to template:', templateSummary);
+    }
+  } else {
+    console.log('❌ No Gemini model initialized - using template explanation');
+    console.log('🔍 DEBUG: GOOGLE_API_KEY present?', !!process.env.GOOGLE_API_KEY);
+    reasoning.constitution_summary = templateSummary;
+  }
+  
+  console.log('\n🔵 === _generateReasoning() COMPLETE ===');
+  console.log('🔵 Returning reasoning with constitution_summary:', reasoning.constitution_summary?.substring(0, 100) + '...');
   
   return reasoning;
 };
@@ -227,8 +348,11 @@ const generateDietPlan = async (clinicalProfile, preferences = {}) => {
     const weeklyPlan = generateWeeklyPlan(clinicalProfile, categorizedFoods);
     console.log('✓ Weekly plan generated');
     
-    // Step 5: Generate reasoning and summary
-    const reasoning = _generateReasoning(clinicalProfile, categorizedFoods);
+    // Step 5: Generate reasoning and summary (with AI if available)
+    const reasoning = await _generateReasoning(clinicalProfile, categorizedFoods);
+    console.log('✓ Reasoning generated');
+    console.log('🔍 DEBUG: reasoning object keys:', Object.keys(reasoning));
+    console.log('🔍 DEBUG: reasoning.constitution_summary:', reasoning.constitution_summary?.substring(0, 150));
     
     // Step 6: Transform weeklyPlan array to 7_day_plan object format
     const sevenDayPlan = {};
@@ -261,11 +385,20 @@ const generateDietPlan = async (clinicalProfile, preferences = {}) => {
     });
     
     // Step 7: Return complete plan in standardized format
+    console.log('\n🟢 === RETURNING DIET PLAN ===');
+    console.log('🟢 reasoning_summary being returned:', reasoning.constitution_summary?.substring(0, 150));
+    
     return {
       '7_day_plan': sevenDayPlan,
-      top_ranked_foods: categorizedFoods.highly_recommended.slice(0, 20),
+      top_ranked_foods: categorizedFoods.highly_recommended.slice(0, 20).map(f => ({
+        food_name: f.food.name,
+        score: f.score
+      })),
       reasoning_summary: reasoning.constitution_summary || JSON.stringify(reasoning),
-      avoidFoods: categorizedFoods.avoid.slice(0, 15),
+      avoidFoods: categorizedFoods.avoid.slice(0, 15).map(f => ({
+        food_name: f.food.name,
+        score: f.score
+      })),
       user_profile: {
         bmi: clinicalProfile.anthropometric.bmi,
         bmr: clinicalProfile.anthropometric.bmr_kcal,

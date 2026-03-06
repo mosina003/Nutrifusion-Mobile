@@ -28,7 +28,18 @@ interface TCMHealthProfile {
   cold_heat: string
 }
 
-type HealthProfile = AyurvedaHealthProfile | UnaniHealthProfile | TCMHealthProfile
+// Modern health profile
+interface ModernHealthProfile {
+  bmi: number
+  bmi_category: string
+  bmr: number
+  tdee: number
+  recommended_calories: number
+  metabolic_risk_level: string
+  primary_goal?: string
+}
+
+type HealthProfile = AyurvedaHealthProfile | UnaniHealthProfile | TCMHealthProfile | ModernHealthProfile
 
 interface StatusChipsProps {
   healthProfile: HealthProfile
@@ -117,6 +128,57 @@ export function StatusChips({ healthProfile, framework = 'ayurveda' }: StatusChi
               {healthProfile.cold_heat}
             </span>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Modern rendering
+  if (framework === 'modern' && 'bmi' in healthProfile) {
+    const getBmiColor = (category: string) => {
+      if (category.toLowerCase().includes('underweight')) return 'bg-blue-100 text-blue-700'
+      if (category.toLowerCase().includes('normal')) return 'bg-green-100 text-green-700'
+      if (category.toLowerCase().includes('overweight')) return 'bg-amber-100 text-amber-700'
+      if (category.toLowerCase().includes('obese')) return 'bg-red-100 text-red-700'
+      return 'bg-gray-100 text-gray-700'
+    }
+
+    const getRiskColor = (level: string) => {
+      if (level === 'low') return 'bg-green-100 text-green-700'
+      if (level === 'moderate') return 'bg-amber-100 text-amber-700'
+      if (level === 'high') return 'bg-red-100 text-red-700'
+      return 'bg-gray-100 text-gray-700'
+    }
+
+    return (
+      <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-600">BMI:</span>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getBmiColor(healthProfile.bmi_category)}`}>
+              {healthProfile.bmi} ({healthProfile.bmi_category})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-600">Target Calories:</span>
+            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+              {healthProfile.recommended_calories} kcal/day
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-600">Metabolic Risk:</span>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold capitalize ${getRiskColor(healthProfile.metabolic_risk_level)}`}>
+              {healthProfile.metabolic_risk_level}
+            </span>
+          </div>
+          {healthProfile.primary_goal && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-600">Goal:</span>
+              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize">
+                {healthProfile.primary_goal}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     )

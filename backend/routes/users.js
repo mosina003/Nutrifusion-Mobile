@@ -6,6 +6,8 @@ const Assessment = require('../models/Assessment');
 const UserActivity = require('../models/UserActivity');
 const DietPlan = require('../models/DietPlan');
 const MedicalCondition = require('../models/MedicalCondition');
+const AuditLog = require('../models/AuditLog');
+const MealCompletion = require('../models/MealCompletion');
 const { protect, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/auditLog');
 
@@ -134,29 +136,40 @@ router.get('/profile/complete', protect, authorize('user'), async (req, res) => 
       tcm: null
     };
 
+    // Always populate modern metrics (universal for all users)
+    healthIntelligence.modern = {
+      metabolicRiskLevel: riskLevel,
+      bmi: bmi,
+      bmr: bmr,
+      tdee: tdee,
+      digestiveScore: healthProfile?.digestionIndicators ? 
+        (healthProfile.digestionIndicators.bowelRegularity === 'Regular' && 
+         !healthProfile.digestionIndicators.bloating && 
+         !healthProfile.digestionIndicators.acidReflux ? 'Good' : 'Fair') : 'Unknown',
+      lifestyleLoadScore: healthProfile?.lifestyle?.stressLevel || 'Unknown',
+      macroSplit: {
+        protein: 30,
+        carbs: 40,
+        fat: 30
+      }
+    };
+
     if (assessment) {
       // Extract data based on assessment framework
       const framework = assessment.framework;
       const scores = assessment.scores;
       const profile = assessment.healthProfile;
 
-      // Modern framework data
-      if (framework === 'modern') {
+      // Modern framework data - update with assessment data if available
+      if (framework === 'modern' && scores) {
         healthIntelligence.modern = {
-          metabolicRiskLevel: riskLevel,
-          bmi: bmi,
-          bmr: bmr,
-          tdee: tdee,
-          digestiveScore: healthProfile?.digestionIndicators ? 
-            (healthProfile.digestionIndicators.bowelRegularity === 'Regular' && 
-             !healthProfile.digestionIndicators.bloating && 
-             !healthProfile.digestionIndicators.acidReflux ? 'Good' : 'Fair') : 'Unknown',
-          lifestyleLoadScore: healthProfile?.lifestyle?.stressLevel || 'Unknown',
-          macroSplit: {
-            protein: 30,
-            carbs: 40,
-            fat: 30
-          }
+          ...healthIntelligence.modern,
+          metabolicRiskLevel: scores.metabolic_risk_level || riskLevel,
+          bmi: scores.bmi || bmi,
+          bmr: scores.bmr || bmr,
+          tdee: scores.tdee || tdee,
+          recommendedCalories: scores.recommended_calories || tdee,
+          macroSplit: scores.macro_split || healthIntelligence.modern.macroSplit
         };
       }
 
@@ -195,7 +208,9 @@ router.get('/profile/complete', protect, authorize('user'), async (req, res) => 
       if (framework === 'tcm' && scores) {
         healthIntelligence.tcm = {
           primaryPattern: scores.primary_pattern || 'Unknown',
+          secondaryPattern: scores.secondary_pattern || null,
           coldHeatPattern: scores.cold_heat || 'Unknown',
+          severity: scores.severity || 2,
           organImbalance: scores.organ_imbalance || [],
           yangDeficiency: scores.yang_deficiency || false,
           yinDeficiency: scores.yin_deficiency || false
@@ -663,6 +678,79 @@ router.get('/:id', protect, authorize('practitioner'), async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching user',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/users/delete-account
+ * @desc    Permanently delete user account and all associated data
+ * @access  Private/User
+ */
+router.delete('/delete-account', protect, authorize('user'), async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    console.log(`🗑️ Starting account deletion for user: ${userId}`);
+
+    // Delete all user-related data in sequence
+    
+    // 1. Delete health profiles
+    const deletedProfiles = await HealthProfile.deleteMany({ userId });
+    console.log(`   Deleted ${deletedProfiles.deletedCount} health profiles`);
+
+    // 2. Delete assessments
+    const deletedAssessments = await Assessment.deleteMany({ userId });
+    console.log(`   Deleted ${deletedAssessments.deletedCount} assessments`);
+
+    // 3. Delete diet plans
+    const deletedDietPlans = await DietPlan.deleteMany({ userId });
+    console.log(`   Deleted ${deletedDietPlans.deletedCount} diet plans`);
+
+    // 4. Delete meal completions
+    const deletedMeals = await MealCompletion.deleteMany({ userId });
+    console.log(`   Deleted ${deletedMeals.deletedCount} meal completions`);
+
+    // 5. Delete user activities
+    const deletedActivities = await UserActivity.deleteMany({ userId });
+    console.log(`   Deleted ${deletedActivities.deletedCount} user activities`);
+
+    // 6. Delete audit logs
+    const deletedAudits = await AuditLog.deleteMany({ userId });
+    console.log(`   Deleted ${deletedAudits.deletedCount} audit logs`);
+
+    // 7. Finally, delete the user account
+    const deletedUser = await User.findByIdAndDelete(userId);
+    
+    if (!deletedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    console.log(`✅ Account deletion completed for user: ${deletedUser.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Account and all associated data have been permanently deleted',
+      data: {
+        deletedRecords: {
+          healthProfiles: deletedProfiles.deletedCount,
+          assessments: deletedAssessments.deletedCount,
+          dietPlans: deletedDietPlans.deletedCount,
+          mealCompletions: deletedMeals.deletedCount,
+          userActivities: deletedActivities.deletedCount,
+          auditLogs: deletedAudits.deletedCount
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error deleting account:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting account',
       error: error.message
     });
   }
