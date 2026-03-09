@@ -104,7 +104,9 @@ router.get('/frameworks', (req, res) => {
     const frameworks = AssessmentEngine.getAvailableFrameworks();
     res.json({
       success: true,
-      frameworks
+      data: {
+        frameworks
+      }
     });
   } catch (error) {
     console.error('Error fetching frameworks:', error);
@@ -116,11 +118,11 @@ router.get('/frameworks', (req, res) => {
 });
 
 /**
- * @route   GET /api/assessments/questions/:framework
+ * @route   GET /api/assessments/:framework/questions
  * @desc    Get questions for a specific framework
  * @access  Private
  */
-router.get('/questions/:framework', protect, (req, res) => {
+router.get('/:framework/questions', protect, (req, res) => {
   try {
     const { framework } = req.params;
     
@@ -143,8 +145,10 @@ router.get('/questions/:framework', protect, (req, res) => {
 
     res.json({
       success: true,
-      framework,
-      questions
+      data: {
+        framework,
+        questions
+      }
     });
   } catch (error) {
     console.error('Error fetching questions:', error);
@@ -180,6 +184,13 @@ router.post('/submit', protect, async (req, res) => {
         error: 'Invalid framework'
       });
     }
+
+    // Debug logging for mobile app troubleshooting
+    console.log('📝 Assessment submission received:');
+    console.log('   Framework:', framework);
+    console.log('   Responses keys:', Object.keys(responses));
+    console.log('   Sample response (ay_q1):', JSON.stringify(responses.ay_q1));
+    console.log('   Full responses:', JSON.stringify(responses, null, 2));
 
     // Process assessment
     try {
@@ -424,12 +435,14 @@ router.post('/submit', protect, async (req, res) => {
       res.json({
         success: true,
         message: 'Assessment completed successfully',
-        assessmentId: assessment._id,
-        results: {
-          framework,
-          scores: result.scores,
-          healthProfile: result.healthProfile,
-          nutritionInputs: result.nutritionInputs
+        data: {
+          assessmentId: assessment._id,
+          results: {
+            framework,
+            scores: result.scores,
+            healthProfile: result.healthProfile,
+            nutritionInputs: result.nutritionInputs
+          }
         }
       });
     } catch (validationError) {

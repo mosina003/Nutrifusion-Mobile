@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "NutriFusion",
+    "slug": "nutrifusion-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nutrifusion.mobile"
+    },
+    "android": {
+      "package": "com.nutrifusion.mobile"
+    },
+    "web": {}
+  }
+}

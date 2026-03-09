@@ -807,6 +807,7 @@ Deep Fried Snacks`;
  * @access  Private/User
  */
 router.get('/', protect, authorize('user'), async (req, res) => {
+  console.log('📊 Dashboard request received for user:', req.user?._id || 'unknown');
   try {
     const userId = req.user._id;
     
