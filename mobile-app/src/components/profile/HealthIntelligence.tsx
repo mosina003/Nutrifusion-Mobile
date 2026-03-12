@@ -31,6 +31,7 @@ export const HealthIntelligence: React.FC<HealthIntelligenceProps> = ({
   agniDescription = 'Sama Agni - Balanced digestion, can eat at regular times.',
   currentStateDescription = 'pitta is currently aggravated - focus on balancing foods and lifestyle.',
 }) => {
+  console.log('🎯 HealthIntelligence RENDERING with:', { primaryDosha, agniType, currentState });
   const [isExpanded, setIsExpanded] = useState(false);
 
   const getDoshaColor = (dosha: string) => {
@@ -42,6 +43,15 @@ export const HealthIntelligence: React.FC<HealthIntelligenceProps> = ({
     return colors[dosha.toLowerCase()] || '#64748b';
   };
 
+  const getDoshaBackgroundColor = (dosha: string) => {
+    const colors: { [key: string]: string } = {
+      vata: '#f5f3ff',
+      pitta: '#fef2f2',
+      kapha: '#f0fdf4',
+    };
+    return colors[dosha.toLowerCase()] || '#f8fafc';
+  };
+
   const getStatusColor = (status: string) => {
     if (status === 'Balanced') return '#10b981';
     if (status === 'Imbalanced') return '#ef4444';
@@ -51,17 +61,17 @@ export const HealthIntelligence: React.FC<HealthIntelligenceProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
-        <Ionicons name="analytics-outline" size={20} color="#0f172a" />
+        <Ionicons name="analytics-outline" size={18} color="#0f172a" />
         <Text style={styles.sectionTitle}>Health Intelligence Summary</Text>
       </View>
 
       {/* Dosha Cards Row */}
       <View style={styles.doshaRow}>
         {/* Primary Dosha */}
-        <View style={styles.doshaCard}>
+        <View style={[styles.doshaCard, { backgroundColor: getDoshaBackgroundColor(primaryDosha) }]}>
           <View style={styles.doshaHeader}>
-            <Ionicons name="flower-outline" size={14} color="#64748b" />
-            <Text style={styles.doshaLabel}>PRIMARY DOSHA</Text>
+            <Ionicons name="flower-outline" size={12} color="#64748b" />
+            <Text style={styles.doshaLabel}>PRIMARY</Text>
           </View>
           <Text style={[styles.doshaValue, { color: getDoshaColor(primaryDosha) }]}>
             {primaryDosha}
@@ -72,23 +82,22 @@ export const HealthIntelligence: React.FC<HealthIntelligenceProps> = ({
         </View>
 
         {/* Agni Type */}
-        <View style={styles.doshaCard}>
+        <View style={[styles.doshaCard, { backgroundColor: '#f0fdf4' }]}>
           <View style={styles.doshaHeader}>
-            <Ionicons name="flame-outline" size={14} color="#64748b" />
-            <Text style={styles.doshaLabel}>AGNI TYPE</Text>
+            <Ionicons name="flame-outline" size={12} color="#64748b" />
+            <Text style={styles.doshaLabel}>AGNI</Text>
           </View>
           <Text style={styles.doshaValue}>{agniType}</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(agniStatus) }]}>
             <Text style={styles.statusText}>{agniStatus}</Text>
-            <Ionicons name="checkmark-circle" size={10} color="#ffffff" />
           </View>
         </View>
 
         {/* Current State */}
-        <View style={styles.doshaCard}>
+        <View style={[styles.doshaCard, { backgroundColor: getDoshaBackgroundColor(currentState) }]}>
           <View style={styles.doshaHeader}>
-            <Ionicons name="heart-outline" size={14} color="#64748b" />
-            <Text style={styles.doshaLabel}>CURRENT STATE</Text>
+            <Ionicons name="pulse-outline" size={12} color="#64748b" />
+            <Text style={styles.doshaLabel}>STATE</Text>
           </View>
           <Text style={[styles.doshaValue, { color: getDoshaColor(currentState) }]}>
             {currentState}
@@ -106,12 +115,12 @@ export const HealthIntelligence: React.FC<HealthIntelligenceProps> = ({
           onPress={() => setIsExpanded(!isExpanded)}
         >
           <View style={styles.constitutionTitleRow}>
-            <Ionicons name="information-circle" size={20} color="#d97706" />
+            <Ionicons name="information-circle" size={16} color="#d97706" />
             <Text style={styles.constitutionTitle}>Understanding Your Constitution</Text>
           </View>
           <Ionicons 
             name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-            size={20} 
+            size={16} 
             color="#d97706" 
           />
         </TouchableOpacity>
@@ -156,75 +165,81 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#0f172a',
   },
   doshaRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 12,
   },
   doshaCard: {
     flex: 1,
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
   doshaHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     gap: 4,
   },
   doshaLabel: {
     fontSize: 9,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#64748b',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   doshaValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#0f172a',
     marginBottom: 6,
     textTransform: 'capitalize',
   },
   percentageBadge: {
     backgroundColor: '#dbeafe',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 12,
     alignSelf: 'flex-start',
   },
   percentageText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#1e40af',
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 12,
     alignSelf: 'flex-start',
-    gap: 4,
   },
   statusText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
     color: '#ffffff',
   },
   constitutionCard: {
     backgroundColor: '#fef3c7',
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#fde047',
     overflow: 'hidden',
@@ -233,31 +248,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
   constitutionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     flex: 1,
   },
   constitutionTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
     color: '#92400e',
   },
   constitutionContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
   },
   constitutionItem: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   constitutionLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#92400e',
     fontWeight: '600',
-    lineHeight: 20,
+    lineHeight: 18,
   },
   constitutionValue: {
     fontWeight: '400',

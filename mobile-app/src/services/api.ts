@@ -2,8 +2,9 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
-// Using localhost with ADB reverse (USB debugging)
-const API_BASE_URL = 'http://localhost:5000/api';
+// Using WiFi connection - phone and laptop must be on same network
+// If you prefer ADB reverse, run: adb reverse tcp:5000 tcp:5000 and change to localhost
+const API_BASE_URL = 'http://192.168.0.102:5000/api';
 
 // Storage Keys
 const TOKEN_KEY = 'nutrifusion_token';
@@ -213,8 +214,23 @@ export const getCurrentUser = async (): Promise<any> => {
 export const getMyProfile = async (): Promise<any> => {
   try {
     const response = await apiClient.get('/users/me');
-    return response.data;
+    console.log('🔍 RESPONSE KEYS:', Object.keys(response.data));
+    console.log('🔍 Has success?', response.data.success);
+    console.log('🔍 Has data?', response.data.data);
+    
+    if (response.data.data) {
+      console.log('🔍 USER DATA KEYS:', Object.keys(response.data.data));
+      console.log('🔍 Framework from data.data:', response.data.data.preferredMedicalFramework);
+    }
+    
+    if (response.data.preferredMedicalFramework !== undefined) {
+      console.log('🔍 Framework from data:', response.data.preferredMedicalFramework);
+    }
+    
+    // Backend returns { success: true, data: user }, so extract the user data
+    return response.data.data || response.data;
   } catch (error: any) {
+    console.error('❌ Failed to get profile:', error);
     throw new Error(error.response?.data?.message || 'Failed to get profile');
   }
 };
@@ -335,6 +351,19 @@ export const getRecommendations = async (): Promise<any> => {
     return response.data;
   } catch (error: any) {
     throw new Error(error.response?.data?.message || 'Failed to get recommendations');
+  }
+};
+
+// ============================================
+// User Account Management
+// ============================================
+
+export const deleteAccount = async (): Promise<void> => {
+  try {
+    await apiClient.delete('/users/me');
+    await removeToken();
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to delete account');
   }
 };
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface DietaryProfileProps {
   preferences?: string[];
@@ -12,7 +13,7 @@ export const DietaryProfile: React.FC<DietaryProfileProps> = ({
   restrictions = [],
   healthConditions = [],
 }) => {
-  const renderTags = (items: string[], color: string, bgColor: string) => {
+  const renderTags = (items: string[], color: string, bgColor: string, icon: string) => {
     if (!items || items.length === 0) {
       return <Text style={styles.emptyText}>None specified</Text>;
     }
@@ -24,6 +25,7 @@ export const DietaryProfile: React.FC<DietaryProfileProps> = ({
             key={index} 
             style={[styles.tag, { backgroundColor: bgColor, borderColor: color }]}
           >
+            <Ionicons name={icon as any} size={12} color={color} />
             <Text style={[styles.tagText, { color }]}>{item}</Text>
           </View>
         ))}
@@ -33,25 +35,28 @@ export const DietaryProfile: React.FC<DietaryProfileProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Dietary Profile</Text>
+      <View style={styles.titleRow}>
+        <Ionicons name="nutrition-outline" size={20} color="#0f172a" />
+        <Text style={styles.sectionTitle}>Dietary Profile</Text>
+      </View>
 
       <View style={styles.card}>
         {/* Preferences */}
         <View style={styles.section}>
           <Text style={styles.subsectionTitle}>PREFERENCES</Text>
-          {renderTags(preferences, '#0891b2', '#ecfeff')}
+          {renderTags(preferences, '#0891b2', '#ecfeff', 'heart')}
         </View>
 
         {/* Restrictions */}
         <View style={styles.section}>
           <Text style={styles.subsectionTitle}>RESTRICTIONS</Text>
-          {renderTags(restrictions, '#ef4444', '#fee2e2')}
+          {renderTags(restrictions, '#ef4444', '#fee2e2', 'close-circle')}
         </View>
 
         {/* Health Conditions */}
         <View style={[styles.section, { borderBottomWidth: 0 }]}>
           <Text style={styles.subsectionTitle}>HEALTH CONDITIONS</Text>
-          {renderTags(healthConditions, '#f59e0b', '#fef3c7')}
+          {renderTags(healthConditions, '#f59e0b', '#fef3c7', 'medkit')}
         </View>
       </View>
     </View>
@@ -62,11 +67,16 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: 24,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#0f172a',
-    marginBottom: 16,
   },
   card: {
     backgroundColor: '#ffffff',
@@ -74,6 +84,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   section: {
     paddingVertical: 12,
@@ -93,6 +108,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,

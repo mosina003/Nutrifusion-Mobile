@@ -1,6 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ImageSourcePropType } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+// Try to load the logo, with a fallback
+let logoImage: ImageSourcePropType | undefined;
+try {
+  logoImage = require('../../../assets/logo.png');
+} catch (e) {
+  console.log('Logo not found:', e);
+}
 
 interface ProfileHeaderProps {
   name: string;
@@ -20,7 +28,7 @@ interface ProfileHeaderProps {
 export const ProfileHeader: React.FC<ProfileHeaderProps> = ({
   name,
   age,
-  framework = 'Ayurveda Framework',
+  framework = 'Ayurvedic Framework',
   profileCompletion,
   bmi,
   bmiCategory,
@@ -34,142 +42,104 @@ export const ProfileHeader: React.FC<ProfileHeaderProps> = ({
   const getInitial = () => name?.charAt(0).toUpperCase() || 'U';
 
   return (
-    <View style={styles.container}>
-      {/* Title */}
-      <Text style={styles.title}>Health Profile</Text>
-      <Text style={styles.subtitle}>Comprehensive health intelligence and analytics</Text>
-
-      {/* Profile Info Card */}
-      <View style={styles.profileCard}>
-        <View style={styles.profileMain}>
-          <View style={styles.avatarContainer}>
-            <Text style={styles.avatarText}>{getInitial()}</Text>
-            <View style={styles.onlineIndicator} />
+    <View style={styles.appHeader}>
+      <View style={styles.logoContainer}>
+        {logoImage ? (
+          <Image 
+            source={logoImage} 
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={[styles.logo, styles.logoPlaceholder]}>
+            <Ionicons name="nutrition" size={24} color="#0891b2" />
           </View>
-          
-          <View style={styles.profileInfo}>
-            <Text style={styles.name}>{name}</Text>
-            <View style={styles.metaRow}>
-              {age && <Text style={styles.metaText}>{age} years</Text>}
-              {age && framework && <Text style={styles.metaDivider}>•</Text>}
-              {framework && <Text style={styles.metaText}>{framework}</Text>}
-            </View>
-            
-            {/* Profile Completion */}
-            <View style={styles.completionContainer}>
-              <Text style={styles.completionLabel}>PROFILE COMPLETION</Text>
-              <Text style={styles.completionValue}>{profileCompletion}%</Text>
-              <View style={styles.progressBarContainer}>
-                <View style={[styles.progressBar, { width: `${profileCompletion}%` }]} />
-              </View>
-            </View>
-          </View>
-        </View>
+        )}
+      </View>
+      
+      <View style={styles.headerActions}>
+        <TouchableOpacity 
+          style={styles.viewResultButton} 
+          onPress={onViewResult}
+        >
+          <Ionicons name="share-outline" size={16} color="#0891b2" />
+          <Text style={styles.viewResultText}>Report</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.exportButton} 
+          onPress={onEditProfile}
+        >
+          <Ionicons name="create-outline" size={20} color="#64748b" />
+        </TouchableOpacity>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748b',
-    marginBottom: 16,
-  },
-  profileCard: {
+  appHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 44,
+    paddingBottom: 12,
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+  },
+  logoPlaceholder: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  viewResultButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  profileMain: {
-    flexDirection: 'row',
-  },
-  avatarContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#0891b2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    position: 'relative',
-  },
-  avatarText: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#10b981',
-    borderWidth: 2,
-    borderColor: '#ffffff',
-  },
-  profileInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  name: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  metaText: {
+  viewResultText: {
     fontSize: 13,
-    color: '#475569',
-  },
-  metaDivider: {
-    fontSize: 13,
-    color: '#cbd5e1',
-    marginHorizontal: 6,
-  },
-  completionContainer: {
-    marginTop: 4,
-  },
-  completionLabel: {
-    fontSize: 10,
     fontWeight: '600',
-    color: '#64748b',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    color: '#0891b2',
   },
-  completionValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 6,
-  },
-  progressBarContainer: {
-    height: 6,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#10b981',
-    borderRadius: 3,
+  exportButton: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 });
+
+export default ProfileHeader;

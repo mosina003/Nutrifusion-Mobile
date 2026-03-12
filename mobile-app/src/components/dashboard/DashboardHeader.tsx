@@ -1,6 +1,14 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ImageSourcePropType } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+// Try to load the logo, with a fallback
+let logoImage: ImageSourcePropType | undefined;
+try {
+  logoImage = require('../../../assets/logo.png');
+} catch (e) {
+  console.log('Logo not found:', e);
+}
 
 interface DashboardHeaderProps {
   onNotificationPress: () => void;
@@ -15,28 +23,41 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 }) => {
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>NutriFusion</Text>
+      <View style={styles.logoContainer}>
+        {logoImage ? (
+          <Image 
+            source={logoImage} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={[styles.logoImage, styles.logoPlaceholder]}>
+            <Ionicons name="nutrition" size={20} color="#0891b2" />
+          </View>
+        )}
+        <Text style={styles.logo}>NutriFusion</Text>
+      </View>
       <View style={styles.iconContainer}>
         <TouchableOpacity
           style={styles.iconButton}
           onPress={onNotificationPress}
           activeOpacity={0.7}
         >
-          <Ionicons name="notifications-outline" size={24} color="#0f172a" />
+          <Ionicons name="notifications-outline" size={20} color="#0f172a" />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.iconButton}
           onPress={onSettingsPress}
           activeOpacity={0.7}
         >
-          <Ionicons name="settings-outline" size={24} color="#0f172a" />
+          <Ionicons name="settings-outline" size={20} color="#0f172a" />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.iconButton}
           onPress={onLogoutPress}
           activeOpacity={0.7}
         >
-          <Ionicons name="log-out-outline" size={24} color="#ef4444" />
+          <Ionicons name="log-out-outline" size={20} color="#ef4444" />
         </TouchableOpacity>
       </View>
     </View>
@@ -49,8 +70,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 29,
-    paddingBottom: 16,
+    paddingTop: 44,
+    paddingBottom: 12,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
@@ -59,6 +80,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoImage: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+  },
+  logoPlaceholder: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   logo: {
     fontSize: 24,
