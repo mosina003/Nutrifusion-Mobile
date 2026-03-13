@@ -8,9 +8,11 @@
  * 4. Formatting for API responses
  */
 
+
 const { scoreFood, scoreAllFoods } = require('./ayurvedaDietEngine');
 const { generateWeeklyPlan, generateReasoning } = require('./ayurvedaMealPlan');
 const Food = require('../../../models/Food');
+const { enhanceWithLLM } = require('../explainability/explanationBuilder');
 
 /**
  * Normalize assessment result to ensure required fields
@@ -112,97 +114,6 @@ const _normalizeAssessment = (assessmentResult) => {
  *   }
  * @returns {Object} Complete diet plan with meals and reasoning
  */
-const generateDietPlan = async (assessmentResult, preferences = {}) => {
-  try {
-    // Normalize and validate assessment (backward compatible)
-    const normalizedAssessment = _normalizeAssessment(assessmentResult);
-    
-    // Step 1: Score all foods
-    console.log('Scoring all Ayurveda foods...');
-    const categorizedFoods = await scoreAllFoods(normalizedAssessment);
-    
-    if (categorizedFoods.highly_recommended.length === 0) {
-      throw new Error('No compatible foods found. Please check food database.');
-    }
-    
-    // Step 2: Apply user preferences (exclude foods)
-    if (preferences.excludeIngredients && preferences.excludeIngredients.length > 0) {
-      const filterByPreferences = (foods) => {
-        return foods.filter(f => 
-          !preferences.excludeIngredients.some(excluded => 
-            f.food.name.toLowerCase().includes(excluded.toLowerCase())
-          )
-        );
-      };
-      
-      categorizedFoods.highly_recommended = filterByPreferences(categorizedFoods.highly_recommended);
-      categorizedFoods.moderate = filterByPreferences(categorizedFoods.moderate);
-      categorizedFoods.avoid = filterByPreferences(categorizedFoods.avoid);
-    }
-    
-    // Filter for vegetarian if requested
-    if (preferences.vegetarianOnly) {
-      const filterVegetarian = (foods) => {
-        return foods.filter(f => f.food.category !== 'Meat');
-      };
-      
-      categorizedFoods.highly_recommended = filterVegetarian(categorizedFoods.highly_recommended);
-      categorizedFoods.moderate = filterVegetarian(categorizedFoods.moderate);
-      categorizedFoods.avoid = filterVegetarian(categorizedFoods.avoid);
-    }
-    
-    // Step 3: Generate 7-day meal plan
-    console.log('Generating 7-day Ayurveda meal plan...');
-    const weeklyPlan = generateWeeklyPlan(normalizedAssessment, categorizedFoods);
-    
-    // Step 4: Generate reasoning and summary
-    const reasoning = generateReasoning(normalizedAssessment, categorizedFoods);
-    
-    // Step 5: Transform weekly plan to expected format
-    const transformedWeeklyPlan = {};
-    weeklyPlan.forEach((dayPlan, index) => {
-      const dayKey = `day_${index + 1}`;
-      
-      // Extract breakfast, lunch, dinner from meals array
-      const breakfast = dayPlan.meals.find(m => m.meal_type === 'Breakfast');
-      const lunch = dayPlan.meals.find(m => m.meal_type === 'Lunch');
-      const dinner = dayPlan.meals.find(m => m.meal_type === 'Dinner');
-      
-      transformedWeeklyPlan[dayKey] = {
-        breakfast: breakfast ? breakfast.foods.map(f => f.food.name) : [],
-        lunch: lunch ? lunch.foods.map(f => f.food.name) : [],
-        dinner: dinner ? dinner.foods.map(f => f.food.name) : [],
-        guidelines: dayPlan.guidelines || []
-      };
-    });
-    
-    // Step 6: Return complete plan in expected format
-    return {
-      '7_day_plan': transformedWeeklyPlan,
-      top_ranked_foods: categorizedFoods.highly_recommended.slice(0, 20).map(f => ({
-        food_name: f.food.name,
-        score: f.score
-      })),
-      reasoning_summary: reasoning.constitution_summary || '',
-      reasoning: reasoning,
-      topRecommendations: categorizedFoods.highly_recommended.slice(0, 20),
-      avoidFoods: categorizedFoods.avoid.slice(0, 15),
-      summary: {
-        total_foods_scored: 
-          categorizedFoods.highly_recommended.length + 
-          categorizedFoods.moderate.length + 
-          categorizedFoods.avoid.length,
-        highly_recommended_count: categorizedFoods.highly_recommended.length,
-        moderate_count: categorizedFoods.moderate.length,
-        avoid_count: categorizedFoods.avoid.length
-      }
-    };
-    
-  } catch (error) {
-    console.error('Ayurveda diet plan generation error:', error);
-    throw error;
-  }
-};
 
 /**
  * Get scored food recommendations (without meal plan)
@@ -211,80 +122,106 @@ const generateDietPlan = async (assessmentResult, preferences = {}) => {
  * @param {number} limit - Maximum number of recommendations to return
  * @returns {Object} Categorized food recommendations
  */
-const getFoodRecommendations = async (assessmentResult, limit = 50) => {
+const generateDietPlan = async (assessmentResult, preferences = {}) => {
   try {
+    // Normalize and validate assessment (backward compatible)
     const normalizedAssessment = _normalizeAssessment(assessmentResult);
-    
-    const categorizedFoods = await scoreAllFoods(normalizedAssessment);
-    
-    return {
-      highly_recommended: categorizedFoods.highly_recommended.slice(0, Math.ceil(limit * 0.4)),
-      moderate: categorizedFoods.moderate.slice(0, Math.ceil(limit * 0.4)),
-      avoid: categorizedFoods.avoid.slice(0, Math.ceil(limit * 0.2)),
-      summary: {
-        total_foods_scored: 
-          categorizedFoods.highly_recommended.length + 
-          categorizedFoods.moderate.length + 
-          categorizedFoods.avoid.length
-      }
-    };
-  } catch (error) {
-    console.error('Ayurveda recommendations error:', error);
-    throw error;
-  }
-};
 
-/**
- * Score a single food item
- * 
- * @param {Object} assessmentResult - Ayurveda assessment output
- * @param {Object} food - Food document or ID
- * @returns {Object} Scored food with detailed breakdown
- */
-const scoreSingleFood = async (assessmentResult, food) => {
-  try {
-    const normalizedAssessment = _normalizeAssessment(assessmentResult);
-    
-    // If food is an ID, fetch it
-    if (typeof food === 'string') {
-      food = await Food.findById(food);
-      if (!food) {
-        throw new Error('Food not found');
-      }
+    // Step 1: Score all foods
+    console.log('Scoring all Ayurveda foods...');
+    const categorizedFoods = await scoreAllFoods(normalizedAssessment);
+
+    if (categorizedFoods.highly_recommended.length === 0) {
+      throw new Error('No compatible foods found. Please check food database.');
     }
-    
-    const scoredFood = scoreFood(normalizedAssessment, food);
-    
-    if (!scoredFood) {
-      throw new Error('Food does not have Ayurveda data or is invalid');
+
+    // Step 2: Apply user preferences (exclude foods)
+    if (preferences.excludeIngredients && preferences.excludeIngredients.length > 0) {
+      const filterByPreferences = (foods) => {
+        return foods.filter(f =>
+          !preferences.excludeIngredients.some(excluded =>
+            f.food.name.toLowerCase().includes(excluded.toLowerCase())
+          )
+        );
+      };
+
+      categorizedFoods.highly_recommended = filterByPreferences(categorizedFoods.highly_recommended);
+      categorizedFoods.moderate = filterByPreferences(categorizedFoods.moderate);
+      categorizedFoods.avoid = filterByPreferences(categorizedFoods.avoid);
     }
-    
+
+    // Filter for vegetarian if requested
+    if (preferences.vegetarianOnly) {
+      const filterVegetarian = (foods) => {
+        return foods.filter(f => f.food.category !== 'Meat');
+      };
+
+      categorizedFoods.highly_recommended = filterVegetarian(categorizedFoods.highly_recommended);
+      categorizedFoods.moderate = filterVegetarian(categorizedFoods.moderate);
+      categorizedFoods.avoid = filterVegetarian(categorizedFoods.avoid);
+    }
+
+    // Step 3: Generate 7-day meal plan
+    console.log('Generating 7-day Ayurveda meal plan...');
+    const weeklyPlan = generateWeeklyPlan(normalizedAssessment, categorizedFoods);
+
+    // Step 4: Generate reasoning and summary
+    const reasoning = generateReasoning(normalizedAssessment, categorizedFoods);
+    let summaryText = reasoning.constitution_summary || '';
+    // Enhance with LLM if available
+    try {
+      summaryText = await enhanceWithLLM(summaryText, { framework: 'ayurveda', assessment: normalizedAssessment });
+    } catch (llmError) {
+      console.warn('LLM enhancement failed for Ayurveda reasoning:', llmError.message);
+    }
+
+    // Step 5: Transform weekly plan to expected format
+    const transformedWeeklyPlan = {};
+    weeklyPlan.forEach((dayPlan, index) => {
+      const dayKey = `day_${index + 1}`;
+
+      // Extract breakfast, lunch, dinner from meals array
+      const breakfast = dayPlan.meals.find(m => m.meal_type === 'Breakfast');
+      const lunch = dayPlan.meals.find(m => m.meal_type === 'Lunch');
+      const dinner = dayPlan.meals.find(m => m.meal_type === 'Dinner');
+
+      transformedWeeklyPlan[dayKey] = {
+        breakfast: breakfast ? breakfast.foods.map(f => f.food.name) : [],
+        lunch: lunch ? lunch.foods.map(f => f.food.name) : [],
+        dinner: dinner ? dinner.foods.map(f => f.food.name) : [],
+        guidelines: dayPlan.guidelines || []
+      };
+    });
+
+    // Step 6: Return complete plan in expected format
     return {
-      ...scoredFood,
-      recommendation: scoredFood.score >= 5 
-        ? 'Highly Recommended' 
-        : scoredFood.score >= 0 
-        ? 'Moderate - Consume in moderation' 
-        : 'Avoid or minimize',
-      details: {
-        dosha_analysis: `This food ${food.ayurveda.doshaEffect[normalizedAssessment.dominant_dosha] === 'Decrease' ? 'balances' : food.ayurveda.doshaEffect[normalizedAssessment.dominant_dosha] === 'Increase' ? 'aggravates' : 'is neutral for'} your dominant ${normalizedAssessment.dominant_dosha} dosha`,
-        agni_compatibility: normalizedAssessment.agni === 'Variable' 
-          ? 'Ensure food is warm and well-cooked for Variable Agni'
-          : normalizedAssessment.agni === 'Sharp'
-          ? 'Your strong Agni can handle most foods'
-          : normalizedAssessment.agni === 'Slow'
-          ? 'Keep portions light for Slow Agni'
-          : 'Balanced Agni - no special restrictions'
+      '7_day_plan': transformedWeeklyPlan,
+      top_ranked_foods: categorizedFoods.highly_recommended.slice(0, 20).map(f => ({
+        food_name: f.food.name,
+        score: f.score
+      })),
+      reasoning_summary: summaryText,
+      reasoning: reasoning,
+      topRecommendations: categorizedFoods.highly_recommended.slice(0, 20),
+      avoidFoods: categorizedFoods.avoid.slice(0, 15),
+      summary: {
+        total_foods_scored:
+          categorizedFoods.highly_recommended.length +
+          categorizedFoods.moderate.length +
+          categorizedFoods.avoid.length,
+        highly_recommended_count: categorizedFoods.highly_recommended.length,
+        moderate_count: categorizedFoods.moderate.length,
+        avoid_count: categorizedFoods.avoid.length
       }
     };
   } catch (error) {
-    console.error('Ayurveda food scoring error:', error);
+    console.error('Ayurveda diet plan generation error:', error);
     throw error;
+
   }
 };
 
 module.exports = {
   generateDietPlan,
-  getFoodRecommendations,
-  scoreSingleFood
+  _normalizeAssessment
 };

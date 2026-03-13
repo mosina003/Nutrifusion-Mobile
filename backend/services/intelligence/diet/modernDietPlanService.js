@@ -13,6 +13,7 @@
 const { scoreFood, scoreAllFoods } = require('./modernDietEngine');
 const { generateWeeklyPlan } = require('./modernMealPlan');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const fetch = require('node-fetch');
 
 // Initialize Gemini AI for personalized explanations
 let geminiModel = null;
@@ -131,6 +132,7 @@ const _generateReasoning = async (clinicalProfile, categorizedFoods) => {
   }
   if (goals.includes('muscle_gain')) {
     reasoning.primary_focus.push('Protein-rich foods with adequate carbohydrates for muscle synthesis and recovery');
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'YOUR_OPENROUTER_API_KEY';
   }
   if (goals.includes('metabolic_health')) {
     reasoning.primary_focus.push('Low glycemic index, nutrient-dense foods to optimize metabolic function');

@@ -5,6 +5,7 @@
 
 const unaniDietEngine = require('./unaniDietEngine');
 const unaniMealPlan = require('./unaniMealPlan');
+const { enhanceWithLLM } = require('../explainability/explanationBuilder');
 
 class UnaniDietPlanService {
   /**
@@ -13,6 +14,7 @@ class UnaniDietPlanService {
    * @param {Object} options - Optional configuration
    * @returns {Promise<Object>} - Complete diet plan with rankings and 7-day plan
    */
+
   async generateDietPlan(userAssessment, options = {}) {
     try {
       // Validate user assessment
@@ -32,11 +34,22 @@ class UnaniDietPlanService {
 
       console.log('✅ Generated 7-day meal plan');
 
+      // Enhance reasoning summary with LLM
+      let enhancedReasoning = mealPlan.reasoning_summary;
+      try {
+        enhancedReasoning = await enhanceWithLLM(mealPlan.reasoning_summary, {
+          userAssessment,
+          rankedFoods
+        });
+      } catch (llmError) {
+        console.warn('LLM enhancement failed for Unani reasoning_summary:', llmError.message);
+      }
+
       // Return complete response in format matching Ayurveda (for consistency)
       return {
         '7_day_plan': mealPlan['7_day_plan'],
         top_ranked_foods: mealPlan.top_ranked_foods,
-        reasoning_summary: mealPlan.reasoning_summary,
+        reasoning_summary: enhancedReasoning,
         user_profile: {
           primary_mizaj: userAssessment.primary_mizaj,
           secondary_mizaj: userAssessment.secondary_mizaj,

@@ -5,6 +5,7 @@
 
 const tcmDietEngine = require('./tcmDietEngine');
 const tcmMealPlan = require('./tcmMealPlan');
+const { enhanceWithLLM } = require('../explainability/explanationBuilder');
 
 class TCMDietPlanService {
   /**
@@ -20,12 +21,8 @@ class TCMDietPlanService {
         throw new Error('Invalid user assessment data');
       }
 
-      // console.log('📊 Loading TCM foods from JSON file...');
-
       // Load all foods from JSON
       const foods = tcmDietEngine.getAllFoods();
-
-      // console.log(`📊 Scoring ${foods.length} foods for TCM diet plan...`);
 
       // Score all foods
       const scoredFoods = foods.map(food => 
@@ -35,18 +32,25 @@ class TCMDietPlanService {
       // Rank foods
       const rankedFoods = tcmDietEngine.rankFoods(scoredFoods);
 
-      // console.log(`✅ Ranked foods: ${rankedFoods.recommendation_count} recommended, ${rankedFoods.avoid_count} to avoid`);
-
       // Generate 7-day meal plan
       const mealPlan = tcmMealPlan.generateWeeklyPlan(rankedFoods, userAssessment);
 
-      // console.log('✅ Generated 7-day TCM meal plan');
+      // Enhance reasoning summary with LLM
+      let enhancedReasoning = mealPlan.reasoning_summary;
+      try {
+        enhancedReasoning = await enhanceWithLLM(mealPlan.reasoning_summary, {
+          userAssessment,
+          rankedFoods
+        });
+      } catch (llmError) {
+        console.warn('LLM enhancement failed for TCM reasoning_summary:', llmError.message);
+      }
 
       // Return complete response in format matching Ayurveda (for consistency)
       return {
         '7_day_plan': mealPlan['7_day_plan'],
         top_ranked_foods: mealPlan.top_ranked_foods,
-        reasoning_summary: mealPlan.reasoning_summary,
+        reasoning_summary: enhancedReasoning,
         user_profile: {
           primary_pattern: userAssessment.primary_pattern,
           secondary_pattern: userAssessment.secondary_pattern,

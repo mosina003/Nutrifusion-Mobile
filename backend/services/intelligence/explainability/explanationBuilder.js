@@ -1,25 +1,13 @@
+require('dotenv').config();
 /**
  * Explanation Builder
  * Converts rule-based reasons into human-readable explanations
  * NOTE: LLM integration is OPTIONAL - AI is ONLY for text formatting, NOT decision-making
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const fetch = require('node-fetch');
 
-// Initialize Gemini (only if API key is available)
-let genAI = null;
-let geminiModel = null;
-
-if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    genAI = new GoogleGenerativeAI(apiKey);
-    geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    console.log('✅ Gemini LLM initialized for explanation enhancement');
-  } catch (error) {
-    console.warn('⚠️ Gemini initialization failed, using base explanations only:', error.message);
-  }
-}
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'YOUR_OPENROUTER_API_KEY';
 
 /**
  * Build natural language explanation from reasons
@@ -160,36 +148,35 @@ const buildSimpleExplanation = (scoreData, itemName) => {
  * @returns {String} - Enhanced explanation (or original if LLM unavailable)
  */
 const enhanceWithLLM = async (baseExplanation, scoreData = {}) => {
-  // If Gemini is not available, return original
-  if (!geminiModel) {
-    return baseExplanation;
-  }
-
+    console.log('[LLM DEBUG] OPENROUTER_API_KEY:', OPENROUTER_API_KEY ? OPENROUTER_API_KEY.substring(0, 10) + '...' : 'undefined');
+  const prompt = `You are a friendly, knowledgeable nutritionist explaining a food recommendation to a patient.\n\nIMPORTANT RULES:\n1. Convert the technical explanation below into warm, conversational language\n2. Keep ALL facts, scores, and reasons accurate - DO NOT add new medical claims\n3. Write 2-3 friendly sentences that explain why this food is recommended\n4. Use simple language, avoid jargon\n5. Maintain the same level of recommendation (highly recommended / suitable / not recommended)\n\nTECHNICAL EXPLANATION TO CONVERT:\n${baseExplanation}\n\nYour friendly explanation (2-3 sentences):`;
   try {
-    // Create prompt for Gemini
-    const prompt = `You are a friendly, knowledgeable nutritionist explaining a food recommendation to a patient.
-
-IMPORTANT RULES:
-1. Convert the technical explanation below into warm, conversational language
-2. Keep ALL facts, scores, and reasons accurate - DO NOT add new medical claims
-3. Write 2-3 friendly sentences that explain why this food is recommended
-4. Use simple language, avoid jargon
-5. Maintain the same level of recommendation (highly recommended / suitable / not recommended)
-
-TECHNICAL EXPLANATION TO CONVERT:
-${baseExplanation}
-
-Your friendly explanation (2-3 sentences):`;
-
-    const result = await geminiModel.generateContent(prompt);
-    const enhancedText = result.response.text();
-
-    // Fallback to original if Gemini returns empty
-    return enhancedText && enhancedText.trim() ? enhancedText.trim() : baseExplanation;
-
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-3.5-turbo', // Change to your desired model
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    const data = await response.json();
+    if (data.choices && Array.isArray(data.choices) && data.choices[0] && data.choices[0].message) {
+      const enhancedText = data.choices[0].message.content.trim();
+      console.log('[LLM DEBUG] OpenRouter response:', enhancedText);
+      if (!enhancedText) {
+        console.warn('[LLM DEBUG] OpenRouter returned empty response. Using base explanation.');
+        return baseExplanation;
+      }
+      return enhancedText;
+    } else {
+      console.warn('[LLM DEBUG] OpenRouter returned malformed response. Using base explanation.', data);
+      return baseExplanation;
+    }
   } catch (error) {
-    // Rate limit or API error - silently fallback to original
-    console.warn('LLM enhancement failed, using base explanation:', error.message);
+    console.warn('[LLM DEBUG] LLM enhancement failed, using base explanation:', error);
     return baseExplanation;
   }
 };

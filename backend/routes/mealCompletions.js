@@ -210,54 +210,93 @@ router.post('/regenerate-plan', protect, async (req, res) => {
       });
     }
 
-    // Generate new diet plan based on framework
-    const framework = assessment.framework || 'ayurveda';
-    let dietPlanService;
+      // Generate new diet plan based on framework
+      const framework = assessment.framework || 'ayurveda';
+      let dietPlanService;
+      switch (framework) {
+        case 'ayurveda':
+          dietPlanService = require('../services/intelligence/diet/ayurvedaDietPlanService');
+          break;
+        case 'unani':
+          dietPlanService = require('../services/intelligence/diet/unaniDietPlanService');
+          break;
+        case 'tcm':
+          dietPlanService = require('../services/intelligence/diet/tcmDietPlanService');
+          break;
+        case 'modern':
+          dietPlanService = require('../services/intelligence/diet/modernDietPlanService');
+          break;
+        default:
+          dietPlanService = require('../services/intelligence/diet/ayurvedaDietPlanService');
+      }
 
-    switch (framework) {
-      case 'ayurveda':
-        dietPlanService = require('../services/intelligence/diet/ayurvedaDietPlanService');
-        break;
-      case 'unani':
-        dietPlanService = require('../services/intelligence/diet/unaniDietPlanService');
-        break;
-      case 'tcm':
-        dietPlanService = require('../services/intelligence/diet/tcmDietPlanService');
-        break;
-      case 'modern':
-        dietPlanService = require('../services/intelligence/diet/modernDietPlanService');
-        break;
-      default:
-        dietPlanService = require('../services/intelligence/diet/ayurvedaDietPlanService');
-    }
+      // Prepare input for comparison and generation
+      let dietPlanInput = assessment.scores;
+      let constitutionSnapshot = {};
+      if (framework === 'modern') {
+        dietPlanInput = transformModernScoresToClinicalProfile(assessment.scores, assessment.responses || {});
+        constitutionSnapshot = { ...dietPlanInput };
+      } else {
+        constitutionSnapshot = { ...assessment.scores };
+      }
 
-    // Generate new 7-day plan
-    let dietPlanInput = assessment.scores;
-    
-    // For modern framework, transform scores to clinical profile format
-    if (framework === 'modern') {
-      console.log('🔄 Transforming Modern scores to clinical profile format');
-      dietPlanInput = transformModernScoresToClinicalProfile(assessment.scores, assessment.responses || {});
-      console.log('✅ Transformed clinical profile');
-    }
-    
-    const newDietPlan = await dietPlanService.generateDietPlan(
-      dietPlanInput,  // Pass the transformed input (scores or clinical profile)
-      {}              // Pass empty preferences object
-    );
+      // Check for existing active DietPlan for today and matching constitution
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const existingPlan = await DietPlan.findOne({
+        userId: req.user.id,
+        planType: framework,
+        status: 'Active',
+        validFrom: { $gte: today }
+      });
 
-    // Update the assessment with the new diet plan
-    assessment.dietPlan = newDietPlan;
-    await assessment.save();
+      // Compare constitution snapshot if plan exists
+      if (existingPlan && existingPlan.metadata && existingPlan.metadata.constitutionSnapshot) {
+        const prevSnapshot = existingPlan.metadata.constitutionSnapshot;
+        const isSame = JSON.stringify(prevSnapshot) === JSON.stringify(constitutionSnapshot);
+        if (isSame) {
+          // Return existing plan
+          return res.json({
+            success: true,
+            message: 'Diet plan already exists for today and constitution unchanged.',
+            dietPlan: {
+              '7_day_plan': existingPlan.meals.reduce((acc, meal) => {
+                const dayKey = `day_${meal.day}`;
+                if (!acc[dayKey]) acc[dayKey] = { breakfast: [], lunch: [], dinner: [], guidelines: [] };
+                acc[dayKey][meal.mealType.toLowerCase()] = meal.foods;
+                return acc;
+              }, {}),
+              top_ranked_foods: existingPlan.rulesApplied?.[0]?.details?.topFoods || [],
+              reasoning_summary: existingPlan.rulesApplied?.[0]?.details?.reasoning || 'Auto-generated plan',
+              avoidFoods: existingPlan.rulesApplied?.[0]?.details?.avoidFoods || []
+            },
+            framework: framework,
+            metadata: {
+              validFrom: existingPlan.validFrom,
+              validTo: existingPlan.validTo
+            }
+          });
+        }
+      }
 
-    // Also update/create in DietPlan collection for consistency
-    const sevenDayPlan = newDietPlan['7_day_plan'] || newDietPlan.sevenDayPlan || newDietPlan;
-    
-    // Convert 7-day plan to meals array format
-    const mealsArray = [];
-    for (let day = 1; day <= 7; day++) {
-      const dayKey = `day_${day}`;
-      const dayMeals = sevenDayPlan[dayKey];
+      // Generate new 7-day plan
+      const newDietPlan = await dietPlanService.generateDietPlan(
+        dietPlanInput,
+        {}
+      );
+
+      // Update the assessment with the new diet plan
+      assessment.dietPlan = newDietPlan;
+      await assessment.save();
+
+      // Also update/create in DietPlan collection for consistency
+      const sevenDayPlan = newDietPlan['7_day_plan'] || newDietPlan.sevenDayPlan || newDietPlan;
+
+      // Convert 7-day plan to meals array format
+      const mealsArray = [];
+      for (let day = 1; day <= 7; day++) {
+        const dayKey = `day_${day}`;
+        const dayMeals = sevenDayPlan[dayKey];
       
       if (dayMeals) {
         if (dayMeals.breakfast) {
@@ -314,7 +353,7 @@ router.post('/regenerate-plan', protect, async (req, res) => {
         rule: 'Auto-generated diet plan',
         details: {
           topFoods: newDietPlan.top_ranked_foods || [],
-          reasoning: newDietPlan.reasoning_summary || 'Auto-generated plan',
+          reasoning: newDietPlan.reasoning_summary && typeof newDietPlan.reasoning_summary === 'string' && newDietPlan.reasoning_summary.length > 0 ? newDietPlan.reasoning_summary : (newDietPlan.reasoning && typeof newDietPlan.reasoning === 'string' ? newDietPlan.reasoning : 'Auto-generated plan'),
           avoidFoods: newDietPlan.avoidFoods || []
         }
       }],

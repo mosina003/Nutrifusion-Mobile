@@ -24,6 +24,7 @@ import { StatusChips } from '../components/dashboard/StatusChips';
 import { DayProgressBar } from '../components/dashboard/DayProgressBar';
 import { MealCard } from '../components/dashboard/MealCard';
 import { RegenerateButton } from '../components/dashboard/RegenerateButton';
+import { CalendarModal } from '../components/dashboard/CalendarModal';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 interface DietPlan {
@@ -111,6 +112,7 @@ const DietPlanScreen = () => {
   );
   const [planStartDate, setPlanStartDate] = useState<Date | null>(null);
   const [planEndDate, setPlanEndDate] = useState<Date | null>(null);
+  const [calendarVisible, setCalendarVisible] = useState(false);
   const hasAttemptedRegenerate = useRef(false);
   const hasCheckedExpiry = useRef(false);
 
@@ -157,31 +159,26 @@ const DietPlanScreen = () => {
 
   // Generate weekly plan from diet plan data
   useEffect(() => {
-    if (dietPlan && planStartDate) {
-      generateWeeklyPlan();
+    if (dietPlan && planStartDate && planEndDate) {
+      generatePlanDays();
     }
-  }, [dietPlan, completions, planStartDate]);
+  }, [dietPlan, completions, planStartDate, planEndDate]);
 
-  const generateWeeklyPlan = () => {
-    if (!planStartDate) return;
+  const generatePlanDays = () => {
+    if (!planStartDate || !planEndDate) return;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startDate = new Date(planStartDate);
-    startDate.setHours(0, 0, 0, 0);
+    // Normalize all dates to local midnight
+    const startDate = new Date(planStartDate.getFullYear(), planStartDate.getMonth(), planStartDate.getDate());
+    const endDate = new Date(planEndDate.getFullYear(), planEndDate.getMonth(), planEndDate.getDate());
 
     const daysData: WeeklyPlanDay[] = [];
-
-    // Generate all 7 days starting from planStartDate
-    for (let i = 0; i < 7; i++) {
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
+    let i = 0;
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
       const dateString = currentDate.toISOString().split('T')[0];
-
       const dayKey = `day_${i + 1}`;
       const dayPlan = dietPlan!['7_day_plan'][dayKey];
       const completion = completions.get(dateString);
-
       daysData.push({
         day: i + 1,
         date: dateString,
@@ -194,15 +191,16 @@ const DietPlanScreen = () => {
         },
         completed: completion?.dayCompleted || false,
       });
+      i++;
+      currentDate.setDate(currentDate.getDate() + 1);
     }
-
     setWeeklyPlan(daysData);
 
     // Calculate which day we're on in the current plan
-    const daysDiff = Math.floor(
-      (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    const calculatedDay = Math.min(Math.max(daysDiff + 1, 1), 7);
+    const today = new Date();
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const daysDiff = Math.floor((todayMidnight.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const calculatedDay = Math.min(Math.max(daysDiff + 1, 1), daysData.length);
     setCurrentDay(calculatedDay);
   };
 
@@ -580,135 +578,160 @@ const DietPlanScreen = () => {
   }
 
   const handleCalendarPress = () => {
-    Alert.alert('Calendar', 'Calendar view coming soon!');
+    setCalendarVisible(true);
+  };
+
+  const handleCalendarClose = () => {
+    setCalendarVisible(false);
+  };
+
+  const handleCalendarDateSelect = (date: Date) => {
+    // Find the day index in weeklyPlan for the selected date
+    const dateStr = date.toISOString().split('T')[0];
+    const found = weeklyPlan.find((d) => d.date === dateStr);
+    if (found) {
+      setCurrentDay(found.day);
+      setCalendarVisible(false);
+    } else {
+      // If not found, just close modal
+      setCalendarVisible(false);
+    }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* App Header */}
-      <View style={styles.appHeader}>
-        <View style={styles.logoContainer}>
-          {logoImage ? (
-            <Image 
-              source={logoImage} 
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          ) : (
-            <View style={[styles.logo, styles.logoPlaceholder]}>
-              <Ionicons name="nutrition" size={24} color="#0891b2" />
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.headerActions}>
-          <TouchableOpacity 
-            style={styles.calendarButton} 
-            onPress={handleCalendarPress}
-          >
-            <Ionicons name="calendar-outline" size={16} color="#0891b2" />
-            <Text style={styles.calendarText}>Calendar</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.refreshButton} 
-            onPress={() => handleRegeneratePlan()}
-            disabled={regenerating}
-          >
-            <Ionicons 
-              name="refresh-outline" 
-              size={20} 
-              color={regenerating ? "#cbd5e0" : "#64748b"} 
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#0891B2']}
-          />
-        }
-      >
-        {/* Page Title */}
-        <View style={styles.pageTitle}>
-          <Icon name="nutrition" size={24} color="#0891B2" />
-          <Text style={styles.title}>Your Personalized Diet Plan</Text>
-        </View>
-
-      {/* Day Selector */}
-      {weeklyPlan.length > 0 && (
-        <DaySelector
-          days={weeklyPlan}
-          selectedDay={currentDay}
-          onDaySelect={setCurrentDay}
-        />
-      )}
-
-      {/* Health Profile Summary */}
-      {healthProfile && (
-        <StatusChips healthProfile={healthProfile} framework={framework} />
-      )}
-
-      {/* Day Progress */}
-      <DayProgressBar
-        completedMeals={completedMeals}
-        totalMeals={totalMeals}
-        dayCompleted={dayCompleted}
+    <>
+      <CalendarModal
+        visible={calendarVisible}
+        onClose={handleCalendarClose}
+        onSelectDate={handleCalendarDateSelect}
+        planStartDate={planStartDate}
+        planEndDate={planEndDate}
+        completions={completions}
       />
-
-      {/* Meals */}
-      <View style={styles.mealsSection}>
-        {meals.map((meal, idx) => (
-          <MealCard
-            key={idx}
-            mealType={meal.type}
-            mealName={meal.name}
-            foods={meal.foods}
-            time={meal.time}
-            icon={meal.icon}
-            explanation={meal.explanation}
-            isCompleted={isMealCompleted(meal.type)}
-            onToggleCompletion={() => handleToggleMealCompletion(meal.type)}
-            onReplaceMeal={() => handleReplaceMeal(meal.type)}
-          />
-        ))}
-      </View>
-
-      {/* Reasoning Summary */}
-      {dietPlan.reasoning_summary && (
-        <View style={styles.reasoningCard}>
-          <View style={styles.reasoningHeader}>
-            <Icon name="leaf" size={20} color="#059669" />
-            <Text style={styles.reasoningTitle}>Why This Plan Works For You</Text>
-          </View>
-          <Text style={styles.reasoningText}>{dietPlan.reasoning_summary}</Text>
-        </View>
-      )}
-
-      {/* Top Ranked Foods */}
-      {dietPlan.top_ranked_foods && dietPlan.top_ranked_foods.length > 0 && (
-        <View style={styles.topFoodsCard}>
-          <Text style={styles.topFoodsTitle}>Top Recommended Foods</Text>
-          <View style={styles.topFoodsContainer}>
-            {dietPlan.top_ranked_foods.slice(0, 10).map((food, idx) => (
-              <View key={idx} style={styles.topFoodChip}>
-                <Text style={styles.topFoodText}>{food.food_name}</Text>
+      <SafeAreaView style={styles.safeArea}>
+        {/* App Header */}
+        <View style={styles.appHeader}>
+          <View style={styles.logoContainer}>
+            {logoImage ? (
+              <Image 
+                source={logoImage} 
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={[styles.logo, styles.logoPlaceholder]}>
+                <Ionicons name="nutrition" size={24} color="#0891b2" />
               </View>
-            ))}
+            )}
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.calendarButton} 
+              onPress={handleCalendarPress}
+            >
+              <Ionicons name="calendar-outline" size={16} color="#0891b2" />
+              <Text style={styles.calendarText}>Calendar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.refreshButton} 
+              onPress={() => handleRegeneratePlan()}
+              disabled={regenerating}
+            >
+              <Ionicons 
+                name="refresh-outline" 
+                size={20} 
+                color={regenerating ? "#cbd5e0" : "#64748b"} 
+              />
+            </TouchableOpacity>
           </View>
         </View>
-      )}
 
-      {/* Footer Spacer */}
-      <View style={{ height: 40 }} />
-    </ScrollView>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#0891B2']}
+            />
+          }
+        >
+          {/* Page Title */}
+          <View style={styles.pageTitle}>
+            <Icon name="nutrition" size={24} color="#0891B2" />
+            <Text style={styles.title}>Your Personalized Diet Plan</Text>
+          </View>
+
+        {/* Day Selector */}
+        {weeklyPlan.length > 0 && (
+          <DaySelector
+            days={weeklyPlan}
+            selectedDay={currentDay}
+            onDaySelect={setCurrentDay}
+          />
+        )}
+
+        {/* Health Profile Summary */}
+        {healthProfile && (
+          <StatusChips healthProfile={healthProfile} framework={framework} />
+        )}
+
+        {/* Day Progress */}
+        <DayProgressBar
+          completedMeals={completedMeals}
+          totalMeals={totalMeals}
+          dayCompleted={dayCompleted}
+        />
+
+        {/* Meals */}
+        <View style={styles.mealsSection}>
+          {meals.map((meal, idx) => (
+            <MealCard
+              key={idx}
+              mealType={meal.type}
+              mealName={meal.name}
+              foods={meal.foods}
+              time={meal.time}
+              icon={meal.icon}
+              explanation={meal.explanation}
+              isCompleted={isMealCompleted(meal.type)}
+              onToggleCompletion={() => handleToggleMealCompletion(meal.type)}
+              onReplaceMeal={() => handleReplaceMeal(meal.type)}
+            />
+          ))}
+        </View>
+
+        {/* Reasoning Summary */}
+        {dietPlan.reasoning_summary && (
+          <View style={styles.reasoningCard}>
+            <View style={styles.reasoningHeader}>
+              <Icon name="leaf" size={20} color="#059669" />
+              <Text style={styles.reasoningTitle}>Why This Plan Works For You</Text>
+            </View>
+            <Text style={styles.reasoningText}>{dietPlan.reasoning_summary}</Text>
+          </View>
+        )}
+
+        {/* Top Ranked Foods */}
+        {dietPlan.top_ranked_foods && dietPlan.top_ranked_foods.length > 0 && (
+          <View style={styles.topFoodsCard}>
+            <Text style={styles.topFoodsTitle}>Top Recommended Foods</Text>
+            <View style={styles.topFoodsContainer}>
+              {dietPlan.top_ranked_foods.slice(0, 10).map((food, idx) => (
+                <View key={idx} style={styles.topFoodChip}>
+                  <Text style={styles.topFoodText}>{food.food_name}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Footer Spacer */}
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </SafeAreaView>
+    </>
   );
 };
 

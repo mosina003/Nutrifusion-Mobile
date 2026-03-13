@@ -1,6 +1,8 @@
 // Load environment variables FIRST before anything else
 require('dotenv').config();
-console.log('🔧 Environment loaded - GROQ_API_KEY present:', !!process.env.GROQ_API_KEY);
+console.log(process.env.OPENROUTER_API_KEY ? '🔑 OPENROUTER_API_KEY is set' : '❌ OPENROUTER_API_KEY is NOT set');
+
+
 if (process.env.GROQ_API_KEY) {
   console.log('🔑 GROQ_API_KEY starts with:', process.env.GROQ_API_KEY.substring(0, 7));
   console.log('🔑 GROQ_API_KEY length:', process.env.GROQ_API_KEY.length);
