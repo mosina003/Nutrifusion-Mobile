@@ -13,10 +13,11 @@ import { getDashboardData } from '../services/api';
 import {
   DashboardHeader,
   WelcomeSection,
-  SummaryCards,
-  HealthScoreCard,
-  RecommendationsSection,
-  QuickActions,
+  HealthInsightCard,
+  DietSummaryCard,
+  RecommendedYogaCard,
+  ActivityTrackingCard,
+  WellnessTipCard,
 } from '../components/dashboard';
 
 interface DashboardData {
@@ -80,10 +81,6 @@ const DashboardScreen = () => {
     Alert.alert('Settings', 'Settings screen coming soon');
   };
 
-  const handleAssessment = () => {
-    Alert.alert('Assessment', 'Navigate to assessment');
-  };
-
   const handleDietPlan = () => {
     Alert.alert('Diet Plan', 'Navigate to diet plan');
   };
@@ -118,22 +115,48 @@ const DashboardScreen = () => {
       >
         <WelcomeSection userName={user?.name} userEmail={user?.email} />
 
-        <SummaryCards
-          currentWeight={dashboardData?.summary?.currentWeight}
-          goalWeight={dashboardData?.summary?.goalWeight}
-          bmi={dashboardData?.summary?.bmi}
-          calorieTarget={dashboardData?.summary?.calorieTarget}
+        <HealthInsightCard
+          prakriti="Vata-Pitta"
+          currentState="Pitta Elevated"
+          agni="Sama Agni"
+          healthScore={79}
+          tip="Favor cooling foods today like cucumber and coconut."
         />
 
-        <HealthScoreCard score={dashboardData?.healthScore || 75} />
-
-        <RecommendationsSection
-          recommendations={dashboardData?.recommendations || []}
+        <DietSummaryCard
+          meals={[
+            { name: 'Breakfast', status: 'completed' },
+            { name: 'Lunch', status: 'upcoming' },
+            { name: 'Dinner', status: 'upcoming' },
+          ]}
+          onViewFullPlan={handleDietPlan}
         />
 
-        <QuickActions
-          onAssessmentPress={handleAssessment}
-          onDietPlanPress={handleDietPlan}
+        <RecommendedYogaCard
+          constitutionType="Pitta Balance"
+          practices={[
+            { name: 'Cooling Breathing', completed: false },
+            { name: 'Moon Salutation', completed: false },
+          ]}
+        />
+
+        <ActivityTrackingCard
+          currentSteps={4200}
+          goalSteps={10000}
+          calories={210}
+          weeklyData={[
+            { day: 'Sat', steps: 0 },
+            { day: 'Sun', steps: 0 },
+            { day: 'Mon', steps: 0 },
+            { day: 'Tue', steps: 0 },
+            { day: 'Wed', steps: 4200 },
+            { day: 'Fri', steps: 0 },
+          ]}
+          onViewFullPlan={handleDietPlan}
+        />
+
+        <WellnessTipCard
+          tip="Drinking warm water in the morning helps stimulate digestion and balance Vata."
         />
       </ScrollView>
       </View>

@@ -52,14 +52,22 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('❌ API Error:', {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      message: error.message,
-      code: error.code,
-      responseData: error.response?.data,
-    });
+    const isNoDietPlan404 = error.response?.status === 404 && 
+      error.config?.url?.includes('diet-plan');
+    
+    // Don't log 404 for diet plan as error - it's an expected state
+    if (!isNoDietPlan404) {
+      console.error('❌ API Error:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        message: error.message,
+        code: error.code,
+        responseData: error.response?.data,
+      });
+    } else {
+      console.log('ℹ️ No diet plan found (expected state)');
+    }
     
     if (error.response?.status === 401) {
       console.warn('🔒 Unauthorized - clearing token');
@@ -168,6 +176,7 @@ export const login = async (credentials: LoginCredentials): Promise<AuthResponse
     if (response.data.success && response.data.token) {
       await setToken(response.data.token);
       await setUser(response.data.data);
+      console.log('💾 User data saved:', { email: response.data.data.email, name: response.data.data.name });
     }
     
     return response.data;
@@ -201,7 +210,12 @@ export const logout = async (): Promise<void> => {
 export const getCurrentUser = async (): Promise<any> => {
   try {
     const response = await apiClient.get('/auth/me');
-    return response.data;
+    if (response.data.success && response.data.data) {
+      // Update local storage with fresh user data
+      await setUser(response.data.data);
+      return response.data.data;
+    }
+    throw new Error('Failed to get user data');
   } catch (error: any) {
     throw new Error(error.response?.data?.message || 'Failed to get user profile');
   }
@@ -214,24 +228,18 @@ export const getCurrentUser = async (): Promise<any> => {
 export const getMyProfile = async (): Promise<any> => {
   try {
     const response = await apiClient.get('/users/me');
-    console.log('🔍 RESPONSE KEYS:', Object.keys(response.data));
-    console.log('🔍 Has success?', response.data.success);
-    console.log('🔍 Has data?', response.data.data);
-    
-    if (response.data.data) {
-      console.log('🔍 USER DATA KEYS:', Object.keys(response.data.data));
-      console.log('🔍 Framework from data.data:', response.data.data.preferredMedicalFramework);
-    }
-    
-    if (response.data.preferredMedicalFramework !== undefined) {
-      console.log('🔍 Framework from data:', response.data.preferredMedicalFramework);
-    }
-    
-    // Backend returns { success: true, data: user }, so extract the user data
     return response.data.data || response.data;
   } catch (error: any) {
-    console.error('❌ Failed to get profile:', error);
     throw new Error(error.response?.data?.message || 'Failed to get profile');
+  }
+};
+
+export const getCompleteProfile = async (): Promise<any> => {
+  try {
+    const response = await apiClient.get('/users/profile/complete');
+    return response.data.data || response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to get complete profile');
   }
 };
 
@@ -241,6 +249,15 @@ export const updateMyProfile = async (profileData: any): Promise<any> => {
     return response.data;
   } catch (error: any) {
     throw new Error(error.response?.data?.message || 'Failed to update profile');
+  }
+};
+
+export const createHealthProfile = async (healthProfileData: any): Promise<any> => {
+  try {
+    const response = await apiClient.post('/health-profiles', healthProfileData);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to update health profile');
   }
 };
 
@@ -296,10 +313,11 @@ export const submitAssessment = async (assessmentData: { framework: string; resp
     // Update user data after successful assessment
     if (response.data.success && response.data.data) {
       console.log('🔄 API: Updating user data...');
-      const updatedUser = await getCurrentUser();
-      if (updatedUser.success && updatedUser.data) {
-        await setUser(updatedUser.data);
+      try {
+        const updatedUser = await getCurrentUser();
         console.log('✅ API: User data updated');
+      } catch (error) {
+        console.error('⚠️ Failed to refresh user data after assessment:', error);
       }
     }
     
@@ -316,6 +334,16 @@ export const submitAssessment = async (assessmentData: { framework: string; resp
                         'Failed to submit assessment';
     
     throw new Error(errorMessage);
+  }
+};
+
+export const getAssessmentHistory = async (userId?: string): Promise<any> => {
+  try {
+    const endpoint = userId ? `/assessments/user/${userId}` : '/assessments/user';
+    const response = await apiClient.get(endpoint);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.error || error.response?.data?.message || 'Failed to get assessment history');
   }
 };
 
@@ -338,6 +366,66 @@ export const getCurrentDietPlan = async (): Promise<any> => {
     return response.data;
   } catch (error: any) {
     throw new Error(error.response?.data?.message || 'Failed to get current diet plan');
+  }
+};
+
+// Get current diet plan with full details from assessment endpoint
+export const getCurrentDietPlanFull = async (): Promise<any> => {
+  try {
+    const response = await apiClient.get('/assessments/diet-plan/current');
+    return response.data;
+  } catch (error: any) {
+    // Use 'error' property if available, fallback to 'message'
+    const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Failed to get diet plan';
+    throw new Error(errorMessage);
+  }
+};
+
+// Get meal completions
+export const getMealCompletions = async (): Promise<any> => {
+  try {
+    const response = await apiClient.get('/meal-completions');
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to get meal completions');
+  }
+};
+
+// Toggle meal completion
+export const toggleMealCompletion = async (data: {
+  date: string;
+  day: number;
+  mealType: string;
+  dietPlanId: string;
+}): Promise<any> => {
+  try {
+    const response = await apiClient.post('/meal-completions/toggle', data);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to toggle meal completion');
+  }
+};
+
+// Regenerate diet plan
+export const regenerateDietPlan = async (): Promise<any> => {
+  try {
+    const response = await apiClient.post('/meal-completions/regenerate-plan');
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.error || error.response?.data?.message || 'Failed to regenerate diet plan');
+  }
+};
+
+// Replace a specific meal
+export const replaceMeal = async (data: {
+  day: number;
+  mealType: string;
+}): Promise<any> => {
+  try {
+    const response = await apiClient.post('/meal-completions/replace-meal', data);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to replace meal');
   }
 };
 

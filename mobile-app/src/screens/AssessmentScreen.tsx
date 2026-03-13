@@ -9,17 +9,19 @@ import {
   ActivityIndicator,
   TextInput,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { MainTabParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import AssessmentResultBlocks from '../components/assessment/AssessmentResultBlocks';
 import { 
   getAssessmentFrameworks, 
   getAssessmentQuestions, 
-  submitAssessment 
+  submitAssessment,
+  getAssessmentHistory,
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-type AssessmentNavigationProp = NativeStackNavigationProp<MainTabParamList, 'Assessment'>;
+type AssessmentNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Assessment'>;
 type AssessmentStep = 'selection' | 'assessment' | 'results';
 
 interface Framework {
@@ -32,6 +34,7 @@ interface Framework {
 
 const AssessmentScreen = () => {
   const navigation = useNavigation<AssessmentNavigationProp>();
+  const route = useRoute<any>();
   const { user, setAuthUser, logout } = useAuth();
   
   // State management
@@ -47,8 +50,36 @@ const AssessmentScreen = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (route.params?.showLatestResult) {
+      loadLatestAssessmentResult();
+      return;
+    }
     loadFrameworks();
-  }, []);
+  }, [route.params?.showLatestResult]);
+
+  const loadLatestAssessmentResult = async () => {
+    try {
+      setLoading(true);
+      const response = await getAssessmentHistory();
+      const assessments = response?.assessments || [];
+
+      if (!assessments.length) {
+        Alert.alert('No Report Found', 'No assessment result is available yet.');
+        navigation.goBack();
+        return;
+      }
+
+      const latest = assessments[0];
+      setSelectedFramework(latest.framework || '');
+      setAssessmentResults(latest);
+      setCurrentStep('results');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to load assessment report');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadFrameworks = async () => {
     try {
@@ -239,7 +270,7 @@ const AssessmentScreen = () => {
       });
     }
     // Navigate to dashboard (will trigger MainTabs to appear)
-    navigation.navigate('Dashboard');
+    navigation.navigate('MainTabs');
   };
 
   const progressPercentage = questions.length > 0 
@@ -428,210 +459,10 @@ const AssessmentScreen = () => {
 
   // RENDER: Results
   if (currentStep === 'results' && assessmentResults) {
-    console.log('🎯 Rendering results with data:', JSON.stringify(assessmentResults, null, 2));
-    
-    // Extract results from the response structure
-    const resultsData = assessmentResults.results || assessmentResults;
-    const { framework, scores, healthProfile } = resultsData;
-    
-    console.log('📊 Extracted data:', { framework, hasScores: !!scores, hasHealthProfile: !!healthProfile });
-    
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         <View style={styles.resultsContainer}>
-          <View style={styles.resultsHeader}>
-            <Text style={styles.resultsIcon}>✅</Text>
-            <Text style={styles.resultsTitle}>Assessment Complete!</Text>
-            <Text style={styles.resultsSubtitle}>
-              Your personalized health profile has been created
-            </Text>
-          </View>
-
-          {/* Framework-specific results */}
-          {framework === 'ayurveda' && healthProfile?.prakriti && (
-            <View style={styles.resultsCard}>
-              <Text style={styles.resultsCardTitle}>Your Dosha Constitution (Prakriti)</Text>
-              
-              <View style={styles.constitutionBadge}>
-                <Text style={styles.constitutionType}>
-                  {healthProfile.prakriti.dosha_type || healthProfile.prakriti.type || 'Balanced'}
-                </Text>
-              </View>
-
-              <View style={styles.doshaGrid}>
-                <View style={styles.doshaItem}>
-                  <Text style={styles.doshaName}>Vata</Text>
-                  <Text style={styles.doshaPercentage}>
-                    {Math.round(healthProfile.prakriti.percentages?.vata || 0)}%
-                  </Text>
-                </View>
-                <View style={styles.doshaItem}>
-                  <Text style={styles.doshaName}>Pitta</Text>
-                  <Text style={styles.doshaPercentage}>
-                    {Math.round(healthProfile.prakriti.percentages?.pitta || 0)}%
-                  </Text>
-                </View>
-                <View style={styles.doshaItem}>
-                  <Text style={styles.doshaName}>Kapha</Text>
-                  <Text style={styles.doshaPercentage}>
-                    {Math.round(healthProfile.prakriti.percentages?.kapha || 0)}%
-                  </Text>
-                </View>
-              </View>
-
-              {healthProfile.vikriti && (
-                <View style={styles.vikritiBadge}>
-                  <Text style={styles.vikritLabel}>Current Imbalance (Vikriti):</Text>
-                  <Text style={styles.vikritType}>
-                    {healthProfile.vikriti.dominant || healthProfile.vikriti.primary_imbalance || 'Balanced'}
-                  </Text>
-                </View>
-              )}
-
-              {healthProfile.agni && (
-                <View style={styles.agniContainer}>
-                  <Text style={styles.agniTitle}>Digestive Fire (Agni):</Text>
-                  <Text style={styles.agniType}>{healthProfile.agni.name || healthProfile.agni.type}</Text>
-                  <Text style={styles.agniDescription}>{healthProfile.agni.description}</Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {framework === 'unani' && (healthProfile?.mizaj || scores?.mizaj) && (
-            <View style={styles.resultsCard}>
-              <Text style={styles.resultsCardTitle}>Your Temperament (Mizaj)</Text>
-              
-              <View style={styles.constitutionBadge}>
-                <Text style={styles.constitutionType}>
-                  {(healthProfile?.mizaj || scores?.mizaj)?.temperament_type || 
-                   (healthProfile?.mizaj || scores?.mizaj)?.type || 'Balanced'}
-                </Text>
-              </View>
-
-              {(healthProfile?.mizaj || scores?.mizaj)?.percentages && (
-                <View style={styles.doshaGrid}>
-                  {Object.entries((healthProfile?.mizaj || scores?.mizaj).percentages).map(([key, value]) => (
-                    <View key={key} style={styles.doshaItem}>
-                      <Text style={styles.doshaName}>
-                        {key.charAt(0).toUpperCase() + key.slice(1)}
-                      </Text>
-                      <Text style={styles.doshaPercentage}>
-                        {Math.round(value as number)}%
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {(healthProfile?.dominant_humor || scores?.dominant_humor) && (
-                <View style={styles.humorBadge}>
-                  <Text style={styles.humorLabel}>Dominant Humor:</Text>
-                  <Text style={styles.humorValue}>
-                    {healthProfile?.dominant_humor || scores?.dominant_humor}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {framework === 'tcm' && (healthProfile?.constitution || scores?.constitution) && (
-            <View style={styles.resultsCard}>
-              <Text style={styles.resultsCardTitle}>Your TCM Constitution</Text>
-              
-              <View style={styles.constitutionBadge}>
-                <Text style={styles.constitutionType}>
-                  {(healthProfile?.constitution || scores?.constitution)?.primary_type || 
-                   scores?.primary_pattern || 'Balanced'}
-                </Text>
-              </View>
-
-              {(healthProfile?.constitution || scores?.constitution)?.patterns && 
-               (healthProfile?.constitution || scores?.constitution).patterns.length > 0 && (
-                <View style={styles.patternsContainer}>
-                  <Text style={styles.patternsTitle}>Primary Patterns:</Text>
-                  {(healthProfile?.constitution || scores?.constitution).patterns.slice(0, 3).map((pattern: string, idx: number) => (
-                    <Text key={idx} style={styles.patternItem}>• {pattern}</Text>
-                  ))}
-                </View>
-              )}
-
-              {scores?.secondary_pattern && (
-                <View style={styles.secondaryPattern}>
-                  <Text style={styles.secondaryLabel}>Secondary Pattern:</Text>
-                  <Text style={styles.secondaryValue}>{scores.secondary_pattern}</Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {framework === 'modern' && (healthProfile || scores) && (
-            <View style={styles.resultsCard}>
-              <Text style={styles.resultsCardTitle}>Health Profile Summary</Text>
-              
-              {healthProfile.bmi && (
-                <View style={styles.healthMetric}>
-                  <Text style={styles.healthMetricLabel}>BMI</Text>
-                  <Text style={styles.healthMetricValue}>
-                    {typeof healthProfile.bmi === 'number' 
-                      ? healthProfile.bmi.toFixed(1)
-                      : healthProfile.bmi.value?.toFixed(1) || 'N/A'}
-                  </Text>
-                  {healthProfile.bmi.category && (
-                    <Text style={styles.healthMetricCategory}>
-                      ({healthProfile.bmi.category})
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {scores?.bmi && !healthProfile.bmi && (
-                <View style={styles.healthMetric}>\n                  <Text style={styles.healthMetricLabel}>BMI</Text>
-                  <Text style={styles.healthMetricValue}>{scores.bmi.toFixed(1)}</Text>
-                  {scores.bmi_category && (
-                    <Text style={styles.healthMetricCategory}>({scores.bmi_category})</Text>
-                  )}
-                </View>
-              )}
-              
-              {healthProfile.nutritionalNeeds && (
-                <View style={styles.nutritionalNeeds}>
-                  <Text style={styles.nutritionalNeedsTitle}>Daily Nutritional Needs:</Text>
-                  <Text style={styles.nutritionalNeedsText}>
-                    Calories: {healthProfile.nutritionalNeeds.calories || 
-                              scores?.recommended_calories || 
-                              scores?.tdee || 'N/A'} kcal
-                  </Text>
-                  {healthProfile.nutritionalNeeds.protein && (
-                    <Text style={styles.nutritionalNeedsText}>
-                      Protein: {healthProfile.nutritionalNeeds.protein}g
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {scores?.recommended_calories && !healthProfile.nutritionalNeeds && (
-                <View style={styles.nutritionalNeeds}>
-                  <Text style={styles.nutritionalNeedsTitle}>Daily Calorie Target:</Text>
-                  <Text style={styles.nutritionalNeedsText}>
-                    {scores.recommended_calories} kcal
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Success message */}
-          <View style={styles.successMessage}>
-            <Text style={styles.successMessageText}>
-              Your personalized diet plan has been generated based on your {
-                framework === 'ayurveda' ? 'dosha constitution' :
-                framework === 'unani' ? 'mizaj temperament' :
-                framework === 'tcm' ? 'TCM constitution' :
-                'health profile'
-              }.
-            </Text>
-          </View>
+          <AssessmentResultBlocks assessmentResults={assessmentResults} />
 
           {/* Action Buttons */}
           <TouchableOpacity

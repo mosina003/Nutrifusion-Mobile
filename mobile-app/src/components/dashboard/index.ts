@@ -4,3 +4,8 @@ export { default as SummaryCards } from './SummaryCards';
 export { default as HealthScoreCard } from './HealthScoreCard';
 export { default as RecommendationsSection } from './RecommendationsSection';
 export { default as QuickActions } from './QuickActions';
+export { default as HealthInsightCard } from './HealthInsightCard';
+export { default as DietSummaryCard } from './DietSummaryCard';
+export { default as RecommendedYogaCard } from './RecommendedYogaCard';
+export { default as ActivityTrackingCard } from './ActivityTrackingCard';
+export { default as WellnessTipCard } from './WellnessTipCard';

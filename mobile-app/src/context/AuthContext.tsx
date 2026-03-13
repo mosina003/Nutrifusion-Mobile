@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { getUser, setUser as saveUser, removeToken } from '../services/api';
+import { getUser, setUser as saveUser, removeToken, getCurrentUser, getToken } from '../services/api';
 
 interface User {
   _id: string;
@@ -37,7 +37,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const loadUser = async () => {
     try {
       const storedUser = await getUser();
+      const token = await getToken();
+      
+      // If we have a token but incomplete user data, fetch from server
+      if (token && storedUser && (!storedUser.email || !storedUser.name)) {
+        console.log('⚠️ Incomplete user data detected, fetching from server...');
+        try {
+          const freshUser = await getCurrentUser();
+          console.log('👤 Logged in user (refreshed):', {
+            email: freshUser.email,
+            name: freshUser.name,
+            framework: freshUser.preferredMedicalFramework,
+            hasCompletedAssessment: freshUser.hasCompletedAssessment,
+          });
+          setUser(freshUser);
+          return;
+        } catch (refreshError) {
+          console.error('Failed to refresh user data:', refreshError);
+          // Token might be invalid, clear it
+          await removeToken();
+          setUser(null);
+          return;
+        }
+      }
+      
       if (storedUser) {
+        console.log('👤 Logged in user:', {
+          email: storedUser.email,
+          name: storedUser.name,
+          framework: storedUser.preferredMedicalFramework,
+          hasCompletedAssessment: storedUser.hasCompletedAssessment,
+        });
         setUser(storedUser);
       }
     } catch (error) {

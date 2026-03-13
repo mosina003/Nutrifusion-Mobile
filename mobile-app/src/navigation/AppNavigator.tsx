@@ -20,7 +20,7 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   Welcome: undefined;
-  Assessment: undefined;
+  Assessment: { showLatestResult?: boolean } | undefined;
   MainTabs: undefined;
 };
 

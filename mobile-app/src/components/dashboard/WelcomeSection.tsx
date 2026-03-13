@@ -19,15 +19,11 @@ const WelcomeSection: React.FC<WelcomeSectionProps> = ({ userName, userEmail }) 
   return (
     <View style={styles.container}>
       <View style={styles.textContainer}>
-        <Text style={styles.greeting}>{getGreeting()},</Text>
-        <Text style={styles.userName}>{displayName}!</Text>
-      </View>
-      <View style={styles.avatarContainer}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {displayName.charAt(0).toUpperCase()}
-          </Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.greeting}>{getGreeting()}, {displayName}</Text>
+          <Text style={styles.leafIcon}>🍃</Text>
         </View>
+        <Text style={styles.subtitle}>Your personalized wellness journey</Text>
       </View>
     </View>
   );
@@ -35,9 +31,6 @@ const WelcomeSection: React.FC<WelcomeSectionProps> = ({ userName, userEmail }) 
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 24,
@@ -45,38 +38,23 @@ const styles = StyleSheet.create({
   textContainer: {
     flex: 1,
   },
-  greeting: {
-    fontSize: 16,
-    color: '#64748b',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
-  userName: {
-    fontSize: 28,
+  greeting: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#0f172a',
+    marginRight: 8,
   },
-  avatarContainer: {
-    marginLeft: 16,
+  leafIcon: {
+    fontSize: 20,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#0891b2',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  avatarText: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#ffffff',
+  subtitle: {
+    fontSize: 14,
+    color: '#64748b',
   },
 });
 

@@ -1,196 +1,704 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
 } from 'react-native';
-import { getCurrentDietPlan } from '../services/api';
-
-interface Meal {
-  name: string;
-  time: string;
-  items: string[];
-  calories?: number;
-  notes?: string;
-}
+import { Ionicons } from '@expo/vector-icons';
+import {
+  getCurrentDietPlanFull,
+  getMealCompletions,
+  toggleMealCompletion,
+  regenerateDietPlan,
+  replaceMeal,
+} from '../services/api';
+import { DaySelector } from '../components/dashboard/DaySelector';
+import { StatusChips } from '../components/dashboard/StatusChips';
+import { DayProgressBar } from '../components/dashboard/DayProgressBar';
+import { MealCard } from '../components/dashboard/MealCard';
+import { RegenerateButton } from '../components/dashboard/RegenerateButton';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 interface DietPlan {
-  _id: string;
-  name: string;
-  framework: string;
-  startDate: string;
-  endDate: string;
-  meals: {
-    breakfast: Meal;
-    lunch: Meal;
-    dinner: Meal;
-    snacks?: Meal[];
+  '7_day_plan': {
+    [key: string]: {
+      breakfast: string[];
+      lunch: string[];
+      dinner: string[];
+    };
   };
-  totalCalories?: number;
-  guidelines?: string[];
+  top_ranked_foods: Array<{ food_name: string; score: number }>;
+  reasoning_summary: string;
+}
+
+// Ayurveda health profile
+interface AyurvedaHealthProfile {
+  prakriti: { dosha_type: string };
+  vikriti: { dominant: string };
+  agni: { name: string; type: string };
+}
+
+// Unani health profile
+interface UnaniHealthProfile {
+  primary_mizaj: string;
+  dominant_humor: string;
+  digestive_strength: string;
+}
+
+// TCM health profile
+interface TCMHealthProfile {
+  primary_pattern: string;
+  secondary_pattern?: string;
+  cold_heat: string;
+}
+
+// Modern health profile
+interface ModernHealthProfile {
+  bmi: number;
+  bmi_category: string;
+  bmr: number;
+  tdee: number;
+  recommended_calories: number;
+  metabolic_risk_level: string;
+  primary_goal?: string;
+}
+
+type HealthProfile =
+  | AyurvedaHealthProfile
+  | UnaniHealthProfile
+  | TCMHealthProfile
+  | ModernHealthProfile;
+
+interface WeeklyPlanDay {
+  day: number;
+  date: string;
+  weekday: string;
+  dateNum: number;
+  meals: {
+    breakfast: string[];
+    lunch: string[];
+    dinner: string[];
+  };
+  completed: boolean;
+}
+
+interface MealCompletion {
+  date: string;
+  day: number;
+  completedMeals: Array<{ mealType: string; completedAt: Date }>;
+  dayCompleted: boolean;
 }
 
 const DietPlanScreen = () => {
   const [dietPlan, setDietPlan] = useState<DietPlan | null>(null);
+  const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
+  const [framework, setFramework] = useState<string>('ayurveda');
+  const [currentDay, setCurrentDay] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedDay, setSelectedDay] = useState('today');
+  const [error, setError] = useState<string | null>(null);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanDay[]>([]);
+  const [completions, setCompletions] = useState<Map<string, MealCompletion>>(
+    new Map()
+  );
+  const [planStartDate, setPlanStartDate] = useState<Date | null>(null);
+  const [planEndDate, setPlanEndDate] = useState<Date | null>(null);
+  const hasAttemptedRegenerate = useRef(false);
+  const hasCheckedExpiry = useRef(false);
 
   useEffect(() => {
     fetchDietPlan();
+    fetchMealCompletions();
   }, []);
+
+  // Auto-regenerate if diet plan is empty (only once)
+  useEffect(() => {
+    if (!loading && !hasAttemptedRegenerate.current && dietPlan) {
+      const hasEmptyData =
+        !dietPlan['7_day_plan'] ||
+        Object.keys(dietPlan['7_day_plan']).length === 0 ||
+        !dietPlan['7_day_plan']['day_1']?.breakfast?.length;
+
+      if (hasEmptyData && !regenerating) {
+        hasAttemptedRegenerate.current = true;
+        regeneratePlanSilent();
+      }
+    }
+  }, [loading, dietPlan]);
+
+  // Check if plan has expired and needs regeneration
+  useEffect(() => {
+    if (
+      planEndDate &&
+      !hasCheckedExpiry.current &&
+      !loading &&
+      !regenerating
+    ) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const endDate = new Date(planEndDate);
+      endDate.setHours(0, 0, 0, 0);
+
+      if (today > endDate) {
+        console.log('📅 Plan expired, auto-regenerating...');
+        hasCheckedExpiry.current = true;
+        regeneratePlanSilent();
+      }
+    }
+  }, [planEndDate, loading, regenerating]);
+
+  // Generate weekly plan from diet plan data
+  useEffect(() => {
+    if (dietPlan && planStartDate) {
+      generateWeeklyPlan();
+    }
+  }, [dietPlan, completions, planStartDate]);
+
+  const generateWeeklyPlan = () => {
+    if (!planStartDate) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(planStartDate);
+    startDate.setHours(0, 0, 0, 0);
+
+    const daysData: WeeklyPlanDay[] = [];
+
+    // Generate all 7 days starting from planStartDate
+    for (let i = 0; i < 7; i++) {
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + i);
+      const dateString = currentDate.toISOString().split('T')[0];
+
+      const dayKey = `day_${i + 1}`;
+      const dayPlan = dietPlan!['7_day_plan'][dayKey];
+      const completion = completions.get(dateString);
+
+      daysData.push({
+        day: i + 1,
+        date: dateString,
+        weekday: currentDate.toLocaleDateString('en-US', { weekday: 'short' }),
+        dateNum: currentDate.getDate(),
+        meals: {
+          breakfast: dayPlan?.breakfast || [],
+          lunch: dayPlan?.lunch || [],
+          dinner: dayPlan?.dinner || [],
+        },
+        completed: completion?.dayCompleted || false,
+      });
+    }
+
+    setWeeklyPlan(daysData);
+
+    // Calculate which day we're on in the current plan
+    const daysDiff = Math.floor(
+      (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const calculatedDay = Math.min(Math.max(daysDiff + 1, 1), 7);
+    setCurrentDay(calculatedDay);
+  };
 
   const fetchDietPlan = async () => {
     try {
-      const data = await getCurrentDietPlan();
-      setDietPlan(data);
-    } catch (error: any) {
-      console.error('Failed to fetch diet plan:', error);
-      Alert.alert('Info', 'No diet plan available. Complete your assessment to get one!');
+      setLoading(true);
+      setError(null);
+
+      const response = await getCurrentDietPlanFull();
+
+      if (response.success) {
+        setDietPlan(response.dietPlan);
+        setHealthProfile(response.healthProfile);
+        setFramework(response.framework || 'ayurveda');
+
+        // Store plan dates from metadata
+        if (response.metadata?.validFrom) {
+          setPlanStartDate(new Date(response.metadata.validFrom));
+        }
+        if (response.metadata?.validTo) {
+          setPlanEndDate(new Date(response.metadata.validTo));
+        }
+      } else {
+        setError(response.error || 'Failed to load diet plan');
+      }
+    } catch (err: any) {
+      console.error('Error fetching diet plan:', err);
+      // Check if it's a "no diet plan found" error
+      if (err.message.includes('No active diet plan') || 
+          err.message.includes('No assessment') ||
+          err.message.includes('complete an assessment')) {
+        setError('expired'); // Special flag for expired plan
+      } else {
+        setError('Failed to load diet plan. Please try again later.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  const fetchMealCompletions = async () => {
+    try {
+      const response = await getMealCompletions();
+      if (response.data) {
+        const completionMap = new Map();
+        response.data.forEach((completion: MealCompletion) => {
+          completionMap.set(completion.date, completion);
+        });
+        setCompletions(completionMap);
+      }
+    } catch (err) {
+      console.error('Error fetching completions:', err);
+    }
+  };
+
+  const handleToggleMealCompletion = async (mealType: string) => {
+    const currentDayData = weeklyPlan[currentDay - 1];
+    if (!currentDayData) return;
+
+    // Optimistic update
+    const updatedCompletions = new Map(completions);
+    const existingCompletion = updatedCompletions.get(currentDayData.date) || {
+      date: currentDayData.date,
+      day: currentDay,
+      completedMeals: [],
+      dayCompleted: false,
+    };
+
+    const mealIndex = existingCompletion.completedMeals.findIndex(
+      (m) => m.mealType === mealType.toLowerCase()
+    );
+
+    if (mealIndex > -1) {
+      existingCompletion.completedMeals.splice(mealIndex, 1);
+    } else {
+      existingCompletion.completedMeals.push({
+        mealType: mealType.toLowerCase(),
+        completedAt: new Date(),
+      });
+    }
+
+    existingCompletion.dayCompleted =
+      existingCompletion.completedMeals.length === 3;
+    updatedCompletions.set(currentDayData.date, existingCompletion);
+    setCompletions(updatedCompletions);
+
+    // API call
+    try {
+      const result = await toggleMealCompletion({
+        date: currentDayData.date,
+        day: currentDay,
+        mealType: mealType.toLowerCase(),
+        dietPlanId: 'current',
+      });
+
+      if (result.data?.dayCompleted && !existingCompletion.dayCompleted) {
+        Alert.alert('Success', '🎉 Day completed! Great job!');
+      }
+    } catch (err: any) {
+      console.error('Error toggling meal:', err);
+      // Revert optimistic update on error
+      fetchMealCompletions();
+      Alert.alert('Error', 'Failed to update meal completion');
+    }
+  };
+
+  const handleRegeneratePlan = async () => {
+    setRegenerating(true);
+    try {
+      const response = await regenerateDietPlan();
+
+      if (response.success && response.dietPlan) {
+        setDietPlan(response.dietPlan);
+        setFramework(response.framework || framework);
+
+        // Use metadata dates from response
+        if (response.metadata?.validFrom) {
+          setPlanStartDate(new Date(response.metadata.validFrom));
+        } else {
+          setPlanStartDate(new Date());
+        }
+
+        if (response.metadata?.validTo) {
+          setPlanEndDate(new Date(response.metadata.validTo));
+        } else {
+          const newEndDate = new Date();
+          newEndDate.setDate(newEndDate.getDate() + 7);
+          setPlanEndDate(newEndDate);
+        }
+
+        hasCheckedExpiry.current = false;
+        Alert.alert('Success', 'Diet plan regenerated successfully!');
+        await fetchMealCompletions();
+        setCurrentDay(1);
+      } else {
+        Alert.alert('Error', response.error || 'Failed to regenerate plan');
+      }
+    } catch (err: any) {
+      console.error('Error regenerating plan:', err);
+      Alert.alert('Error', err.message || 'Failed to regenerate plan');
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  // Silent version for auto-generation
+  const regeneratePlanSilent = async () => {
+    setRegenerating(true);
+    try {
+      const response = await regenerateDietPlan();
+
+      if (response.success && response.dietPlan) {
+        console.log('🔄 Auto-generated diet plan');
+        setDietPlan(response.dietPlan);
+        setFramework(response.framework || framework);
+
+        if (response.metadata?.validFrom) {
+          setPlanStartDate(new Date(response.metadata.validFrom));
+        } else {
+          setPlanStartDate(new Date());
+        }
+
+        if (response.metadata?.validTo) {
+          setPlanEndDate(new Date(response.metadata.validTo));
+        } else {
+          const newEndDate = new Date();
+          newEndDate.setDate(newEndDate.getDate() + 7);
+          setPlanEndDate(newEndDate);
+        }
+
+        hasCheckedExpiry.current = false;
+        await fetchMealCompletions();
+        setCurrentDay(1);
+      }
+    } catch (err) {
+      console.error('Error auto-generating plan:', err);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleReplaceMeal = async (mealType: string) => {
+    try {
+      const response = await replaceMeal({
+        day: currentDay,
+        mealType: mealType.toLowerCase(),
+      });
+
+      if (response.data?.newFoods && dietPlan) {
+        const updatedPlan = { ...dietPlan };
+        const dayKey = `day_${currentDay}`;
+        const mealKey = mealType.toLowerCase() as 'breakfast' | 'lunch' | 'dinner';
+
+        if (updatedPlan['7_day_plan'][dayKey]) {
+          updatedPlan['7_day_plan'][dayKey][mealKey] = response.data.newFoods;
+        }
+        setDietPlan(updatedPlan);
+        Alert.alert('Success', `${mealType} replaced successfully!`);
+      }
+    } catch (err: any) {
+      console.error('Error replacing meal:', err);
+      Alert.alert('Error', err.message || 'Failed to replace meal');
+    }
+  };
+
+  const getCurrentDayCompletion = () => {
+    const currentDayData = weeklyPlan[currentDay - 1];
+    if (!currentDayData)
+      return { completedMeals: 0, totalMeals: 3, dayCompleted: false };
+
+    const completion = completions.get(currentDayData.date);
+    return {
+      completedMeals: completion?.completedMeals.length || 0,
+      totalMeals: 3,
+      dayCompleted: completion?.dayCompleted || false,
+    };
+  };
+
+  const isMealCompleted = (mealType: string) => {
+    const currentDayData = weeklyPlan[currentDay - 1];
+    if (!currentDayData) return false;
+
+    const completion = completions.get(currentDayData.date);
+    return (
+      completion?.completedMeals.some(
+        (m) => m.mealType === mealType.toLowerCase()
+      ) || false
+    );
+  };
+
+  const getMealIcon = (type: string) => {
+    switch (type) {
+      case 'breakfast':
+        return '🌅';
+      case 'lunch':
+        return '🍽️';
+      case 'dinner':
+        return '🌙';
+      default:
+        return '🍴';
+    }
+  };
+
+  const getMealTime = (type: string) => {
+    switch (type) {
+      case 'breakfast':
+        return '7:00 AM - 8:00 AM';
+      case 'lunch':
+        return '12:00 PM - 1:00 PM';
+      case 'dinner':
+        return '6:00 PM - 7:00 PM';
+      default:
+        return '';
+    }
+  };
+
+  const getMealExplanation = (type: string) => {
+    switch (type) {
+      case 'breakfast':
+        return 'Light and easy to digest, perfect way to start your day';
+      case 'lunch':
+        return 'Main meal of the day when digestive fire is strongest';
+      case 'dinner':
+        return 'Light evening meal to support restful sleep';
+      default:
+        return '';
+    }
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchDietPlan();
+    fetchMealCompletions();
   };
 
-  if (loading) {
+  if (loading || regenerating) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0891b2" />
-      </View>
-    );
-  }
-
-  if (!dietPlan) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyIcon}>🍽️</Text>
-        <Text style={styles.emptyTitle}>No Diet Plan Yet</Text>
-        <Text style={styles.emptyText}>
-          Complete your health assessment to receive a personalized diet plan
+        <ActivityIndicator size="large" color="#0891B2" />
+        <Text style={styles.loadingText}>
+          {regenerating
+            ? 'Generating your personalized diet plan...'
+            : 'Loading your personalized diet plan...'}
         </Text>
-        <TouchableOpacity style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>Take Assessment</Text>
-        </TouchableOpacity>
       </View>
     );
   }
 
-  const renderMeal = (meal: Meal, mealType: string, icon: string) => {
-    if (!meal) return null;
-
+  if (error) {
+    // Check if it's an expired plan error
+    const isExpiredPlan = error === 'expired' || error.includes('No active diet plan');
+    
     return (
-      <View style={styles.mealCard}>
-        <View style={styles.mealHeader}>
-          <View style={styles.mealTitleContainer}>
-            <Text style={styles.mealIcon}>{icon}</Text>
-            <View>
-              <Text style={styles.mealType}>{mealType}</Text>
-              <Text style={styles.mealTime}>{meal.time || 'Anytime'}</Text>
-            </View>
-          </View>
-          {meal.calories && (
-            <View style={styles.caloriesBadge}>
-              <Text style={styles.caloriesText}>{meal.calories} cal</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.mealItems}>
-          {meal.items && meal.items.length > 0 ? (
-            meal.items.map((item, index) => (
-              <View key={index} style={styles.mealItem}>
-                <Text style={styles.itemBullet}>•</Text>
-                <Text style={styles.itemText}>{item}</Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.noItemsText}>No items specified</Text>
-          )}
-        </View>
-
-        {meal.notes && (
-          <View style={styles.mealNotes}>
-            <Text style={styles.notesLabel}>Note:</Text>
-            <Text style={styles.notesText}>{meal.notes}</Text>
-          </View>
+      <View style={styles.errorContainer}>
+        <Icon 
+          name={isExpiredPlan ? "calendar-clock" : "alert-circle"} 
+          size={60} 
+          color={isExpiredPlan ? "#0891B2" : "#F59E0B"} 
+        />
+        <Text style={styles.errorTitle}>
+          {isExpiredPlan ? 'Diet Plan Expired' : 'Error'}
+        </Text>
+        <Text style={styles.errorText}>
+          {isExpiredPlan 
+            ? 'Your 7-day diet plan has expired. Generate a new personalized plan to continue your journey!' 
+            : error}
+        </Text>
+        {isExpiredPlan && (
+          <RegenerateButton 
+            onRegenerate={handleRegeneratePlan}
+            isLoading={regenerating}
+          />
         )}
       </View>
     );
+  }
+
+  if (!dietPlan || !dietPlan['7_day_plan']) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0891B2" />
+        <Text style={styles.loadingText}>Preparing your diet plan...</Text>
+      </View>
+    );
+  }
+
+  const currentDayPlan = dietPlan['7_day_plan']?.[`day_${currentDay}`];
+  if (!currentDayPlan) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0891B2" />
+        <Text style={styles.loadingText}>
+          Loading day {currentDay} meal plan...
+        </Text>
+      </View>
+    );
+  }
+
+  const { completedMeals, totalMeals, dayCompleted } = getCurrentDayCompletion();
+
+  const meals = [
+    {
+      type: 'breakfast',
+      name: 'Breakfast',
+      foods: currentDayPlan.breakfast,
+      time: getMealTime('breakfast'),
+      icon: getMealIcon('breakfast'),
+      explanation: getMealExplanation('breakfast'),
+    },
+    {
+      type: 'lunch',
+      name: 'Lunch',
+      foods: currentDayPlan.lunch,
+      time: getMealTime('lunch'),
+      icon: getMealIcon('lunch'),
+      explanation: getMealExplanation('lunch'),
+    },
+    {
+      type: 'dinner',
+      name: 'Dinner',
+      foods: currentDayPlan.dinner,
+      time: getMealTime('dinner'),
+      icon: getMealIcon('dinner'),
+      explanation: getMealExplanation('dinner'),
+    },
+  ];
+
+  // Try to load the logo
+  let logoImage;
+  try {
+    logoImage = require('../../assets/logo.png');
+  } catch (e) {
+    logoImage = null;
+  }
+
+  const handleCalendarPress = () => {
+    Alert.alert('Calendar', 'Calendar view coming soon!');
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0891b2']} />
-      }
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.planName}>{dietPlan.name || 'Your Diet Plan'}</Text>
-        <View style={styles.frameworkBadge}>
-          <Text style={styles.frameworkText}>{dietPlan.framework}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      {/* App Header */}
+      <View style={styles.appHeader}>
+        <View style={styles.logoContainer}>
+          {logoImage ? (
+            <Image 
+              source={logoImage} 
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          ) : (
+            <View style={[styles.logo, styles.logoPlaceholder]}>
+              <Ionicons name="nutrition" size={24} color="#0891b2" />
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.calendarButton} 
+            onPress={handleCalendarPress}
+          >
+            <Ionicons name="calendar-outline" size={16} color="#0891b2" />
+            <Text style={styles.calendarText}>Calendar</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.refreshButton} 
+            onPress={() => handleRegeneratePlan()}
+            disabled={regenerating}
+          >
+            <Ionicons 
+              name="refresh-outline" 
+              size={20} 
+              color={regenerating ? "#cbd5e0" : "#64748b"} 
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Summary Card */}
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Daily Calories</Text>
-          <Text style={styles.summaryValue}>{dietPlan.totalCalories || 2000}</Text>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#0891B2']}
+          />
+        }
+      >
+        {/* Page Title */}
+        <View style={styles.pageTitle}>
+          <Icon name="nutrition" size={24} color="#0891B2" />
+          <Text style={styles.title}>Your Personalized Diet Plan</Text>
         </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Meals</Text>
-          <Text style={styles.summaryValue}>4</Text>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Days Active</Text>
-          <Text style={styles.summaryValue}>7</Text>
-        </View>
-      </View>
+
+      {/* Day Selector */}
+      {weeklyPlan.length > 0 && (
+        <DaySelector
+          days={weeklyPlan}
+          selectedDay={currentDay}
+          onDaySelect={setCurrentDay}
+        />
+      )}
+
+      {/* Health Profile Summary */}
+      {healthProfile && (
+        <StatusChips healthProfile={healthProfile} framework={framework} />
+      )}
+
+      {/* Day Progress */}
+      <DayProgressBar
+        completedMeals={completedMeals}
+        totalMeals={totalMeals}
+        dayCompleted={dayCompleted}
+      />
 
       {/* Meals */}
       <View style={styles.mealsSection}>
-        <Text style={styles.sectionTitle}>Today's Meals</Text>
-        
-        {dietPlan.meals.breakfast && 
-          renderMeal(dietPlan.meals.breakfast, 'Breakfast', '🌅')}
-        
-        {dietPlan.meals.lunch && 
-          renderMeal(dietPlan.meals.lunch, 'Lunch', '☀️')}
-        
-        {dietPlan.meals.dinner && 
-          renderMeal(dietPlan.meals.dinner, 'Dinner', '🌙')}
-        
-        {dietPlan.meals.snacks && dietPlan.meals.snacks.length > 0 &&
-          dietPlan.meals.snacks.map((snack, idx) => 
-            renderMeal(snack, 'Snack', '🍎')
-          )}
+        {meals.map((meal, idx) => (
+          <MealCard
+            key={idx}
+            mealType={meal.type}
+            mealName={meal.name}
+            foods={meal.foods}
+            time={meal.time}
+            icon={meal.icon}
+            explanation={meal.explanation}
+            isCompleted={isMealCompleted(meal.type)}
+            onToggleCompletion={() => handleToggleMealCompletion(meal.type)}
+            onReplaceMeal={() => handleReplaceMeal(meal.type)}
+          />
+        ))}
       </View>
 
-      {/* Guidelines */}
-      {dietPlan.guidelines && dietPlan.guidelines.length > 0 && (
-        <View style={styles.guidelinesSection}>
-          <Text style={styles.sectionTitle}>Daily Guidelines</Text>
-          <View style={styles.guidelinesCard}>
-            {dietPlan.guidelines.map((guideline, index) => (
-              <View key={index} style={styles.guidelineItem}>
-                <Text style={styles.guidelineIcon}>✓</Text>
-                <Text style={styles.guidelineText}>{guideline}</Text>
+      {/* Reasoning Summary */}
+      {dietPlan.reasoning_summary && (
+        <View style={styles.reasoningCard}>
+          <View style={styles.reasoningHeader}>
+            <Icon name="leaf" size={20} color="#059669" />
+            <Text style={styles.reasoningTitle}>Why This Plan Works For You</Text>
+          </View>
+          <Text style={styles.reasoningText}>{dietPlan.reasoning_summary}</Text>
+        </View>
+      )}
+
+      {/* Top Ranked Foods */}
+      {dietPlan.top_ranked_foods && dietPlan.top_ranked_foods.length > 0 && (
+        <View style={styles.topFoodsCard}>
+          <Text style={styles.topFoodsTitle}>Top Recommended Foods</Text>
+          <View style={styles.topFoodsContainer}>
+            {dietPlan.top_ranked_foods.slice(0, 10).map((food, idx) => (
+              <View key={idx} style={styles.topFoodChip}>
+                <Text style={styles.topFoodText}>{food.food_name}</Text>
               </View>
             ))}
           </View>
@@ -200,227 +708,185 @@ const DietPlanScreen = () => {
       {/* Footer Spacer */}
       <View style={{ height: 40 }} />
     </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  appHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 44,
+    paddingBottom: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+  },
+  logoPlaceholder: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  calendarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  calendarText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0891b2',
+  },
+  refreshButton: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F8FAFC',
   },
   content: {
-    padding: 20,
+    padding: 16,
+  },
+  pageTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    marginLeft: 8,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F8FAFC',
+    padding: 40,
   },
-  emptyContainer: {
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
+    backgroundColor: '#FEF3C7',
   },
-  emptyIcon: {
-    fontSize: 80,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  header: {
-    marginBottom: 20,
-  },
-  planName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 8,
-  },
-  frameworkBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#0891b2',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  frameworkText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  summaryCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  summaryItem: {
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    marginBottom: 4,
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  summaryDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: '#e2e8f0',
-  },
-  mealsSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
+  errorTitle: {
+    marginTop: 16,
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 12,
+    color: '#92400E',
+    textAlign: 'center',
   },
-  mealCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
+  errorText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#92400E',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  mealsSection: {
+    marginBottom: 20,
+  },
+  reasoningCard: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#A7F3D0',
   },
-  mealHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  mealTitleContainer: {
+  reasoningHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  mealIcon: {
-    fontSize: 32,
-    marginRight: 12,
+  reasoningTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#047857',
+    marginLeft: 8,
   },
-  mealType: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  mealTime: {
+  reasoningText: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#334155',
+    lineHeight: 20,
   },
-  caloriesBadge: {
-    backgroundColor: '#fef3c7',
+  topFoodsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  topFoodsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  topFoodsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  topFoodChip: {
+    backgroundColor: '#DBEAFE',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
-  },
-  caloriesText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#92400e',
-  },
-  mealItems: {
-    marginBottom: 8,
-  },
-  mealItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  itemBullet: {
-    fontSize: 16,
-    color: '#0891b2',
-    marginRight: 8,
-    marginTop: 2,
-  },
-  itemText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  noItemsText: {
-    fontSize: 14,
-    color: '#94a3b8',
-    fontStyle: 'italic',
-  },
-  mealNotes: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-  },
-  notesLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748b',
-    marginBottom: 4,
-  },
-  notesText: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  guidelinesSection: {
-    marginBottom: 24,
-  },
-  guidelinesCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
-  guidelineItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  guidelineIcon: {
-    fontSize: 16,
-    color: '#10b981',
-    marginRight: 12,
-    marginTop: 2,
-  },
-  guidelineText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  primaryButton: {
-    backgroundColor: '#0891b2',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+  topFoodText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#1E40AF',
   },
 });
 

@@ -10,14 +10,17 @@ import {
   Text as RNText,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { getMyProfile, updateMyProfile, deleteAccount } from '../services/api';
+import { getCompleteProfile, getAssessmentHistory, updateMyProfile, deleteAccount } from '../services/api';
 import {
   ProfileHeader,
   HealthIntelligence,
   ClinicalMetrics,
   LifestyleIndicators,
   DietaryProfile,
+  AnalyticsHistory,
   DangerZone,
+  EditProfileModal,
+  AssessmentResultModal,
 } from '../components/profile';
 
 interface ProfileData {
@@ -40,6 +43,7 @@ interface ProfileData {
   bloodSugar?: number;
   cholesterol?: number;
   profileCompletion?: number;
+  riskLevel?: string;
   // Ayurveda specific
   primaryDosha?: string;
   primaryDoshaPercentage?: number;
@@ -71,6 +75,10 @@ const ProfileScreen = () => {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [latestAssessment, setLatestAssessment] = useState<any>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -78,89 +86,84 @@ const ProfileScreen = () => {
 
   const fetchProfile = async () => {
     try {
-      const data = await getMyProfile();
-      
-      console.log('📊 Profile Data from API:', {
-        name: data.name,
-        email: data.email,
-        preferredMedicalFramework: data.preferredMedicalFramework,
+      const data = await getCompleteProfile();
+      console.log('📊 Complete Profile from API:', {
+        name: data.identity?.name,
+        framework: data.identity?.activeFramework,
         hasCompletedAssessment: data.hasCompletedAssessment,
       });
-      
-      // Calculate profile completion percentage
-      const completionFields = [
-        'name', 'email', 'age', 'gender', 'height', 'weight',
-        'dietaryPreference', 'hasCompletedAssessment',
-      ];
-      const completedFields = completionFields.filter(field => data[field]);
-      const completion = Math.round((completedFields.length / completionFields.length) * 100);
-      
-      const profileData = {
-        ...data,
-        profileCompletion: completion,
-        // Mock data for demonstration - replace with actual API data
-        bmi: data.height && data.weight ? 
-          parseFloat((data.weight / Math.pow(data.height / 100, 2)).toFixed(1)) : undefined,
-        bmr: 1319, // Should come from API
-        tdee: 1583, // Should come from API
-        waist: 28, // Should come from API
-        bloodPressure: 129, // Should come from API
-        bloodSugar: 98, // Should come from API
-        cholesterol: 160, // Should come from API
-        primaryDosha: 'vata',
-        primaryDoshaPercentage: 39,
-        secondaryDosha: 'pitta',
-        secondaryDoshaPercentage: 39,
-        agniType: 'Sama Agni',
-        agniStatus: 'Balanced',
-        currentState: 'pitta',
-        currentStateStatus: 'Imbalanced',
-        sleepQuality: 'Good',
-        stressLevel: 'Medium',
-        activityLevel: 'Sedentary',
-        hydration: 'Unknown',
-        appetite: 'Normal',
-        currentStreak: 4,
-        compliance: 0,
-        daysTracked: 17,
-        dietPlansCount: 4,
-        preferences: ['Vegetarian'],
-        restrictions: ['apple'],
-        healthConditions: ['thyroid'],
+
+      const ayurveda = data.healthIntelligence?.ayurveda;
+      const primaryDosha: string | undefined = ayurveda?.primaryDosha || undefined;
+      const secondaryDosha: string | undefined = ayurveda?.secondaryDosha || undefined;
+      const doshaPercentages = ayurveda?.percentages || {};
+      const agniName: string = ayurveda?.agniName || ayurveda?.agniType || '';
+      const agniStatus: string | undefined = agniName
+        ? agniName.toLowerCase().includes('sama') ? 'Balanced' : 'Imbalanced'
+        : undefined;
+
+      const profileData: ProfileData = {
+        // Identity
+        name: data.identity?.name || user?.name || '',
+        email: data.identity?.email || user?.email || '',
+        age: data.identity?.age,
+        gender: data.identity?.gender,
+        preferredMedicalFramework: data.identity?.activeFramework || user?.preferredMedicalFramework,
+        profileCompletion: data.identity?.profileCompletion || 0,
+        hasCompletedAssessment: data.hasCompletedAssessment,
+        riskLevel: data.kpi?.riskLevel,
+
+        // Clinical metrics
+        height: data.clinicalMetrics?.anthropometric?.height,
+        weight: data.clinicalMetrics?.anthropometric?.weight,
+        bmi: data.kpi?.bmi || data.clinicalMetrics?.anthropometric?.bmi,
+        bmr: data.clinicalMetrics?.anthropometric?.bmr,
+        tdee: data.kpi?.calorieTarget || data.clinicalMetrics?.anthropometric?.tdee,
+        waist: data.clinicalMetrics?.anthropometric?.waist,
+        bloodPressure: data.clinicalMetrics?.metabolic?.bloodPressure,
+        bloodSugar: data.clinicalMetrics?.metabolic?.bloodSugar,
+        cholesterol: data.clinicalMetrics?.metabolic?.cholesterol,
+
+        // Ayurveda health intelligence
+        primaryDosha,
+        primaryDoshaPercentage: primaryDosha ? (doshaPercentages[primaryDosha.toLowerCase()] || undefined) : undefined,
+        secondaryDosha,
+        secondaryDoshaPercentage: secondaryDosha ? (doshaPercentages[secondaryDosha.toLowerCase()] || undefined) : undefined,
+        agniType: agniName || undefined,
+        agniStatus,
+        currentState: ayurveda?.currentDosha || undefined,
+        currentStateStatus: ayurveda?.imbalanceSeverity || undefined,
+
+        // Lifestyle
+        sleepQuality: data.lifestyleIndicators?.sleepQuality,
+        stressLevel: data.lifestyleIndicators?.stressLevel,
+        activityLevel: data.lifestyleIndicators?.activityLevel,
+        hydration: data.lifestyleIndicators?.hydrationLevel,
+        appetite: data.lifestyleIndicators?.appetite,
+
+        // Dietary
+        preferences: data.dietaryInfo?.preferences?.filter(Boolean) || [],
+        restrictions: data.dietaryInfo?.restrictions || [],
+        healthConditions: data.dietaryInfo?.chronicConditions || [],
+
+        // Analytics
+        currentStreak: data.analytics?.currentStreak,
+        compliance: data.analytics?.complianceScore,
+        daysTracked: data.analytics?.totalDaysTracked,
+        dietPlansCount: data.analytics?.dietPlansCount,
       };
-      
-      console.log('✅ Setting profile with framework:', profileData.preferredMedicalFramework);
+
+      console.log('✅ Profile loaded - framework:', profileData.preferredMedicalFramework);
       setProfile(profileData);
     } catch (error: any) {
       console.error('Failed to fetch profile:', error);
-      // Set default profile from user context
-      const defaultProfile: ProfileData = {
+      setProfile({
         name: user?.name || '',
         email: user?.email || '',
         hasCompletedAssessment: user?.hasCompletedAssessment,
         preferredMedicalFramework: user?.preferredMedicalFramework || 'Ayurveda',
-        profileCompletion: 50,
-        // Mock Ayurveda data for demonstration
-        primaryDosha: 'vata',
-        primaryDoshaPercentage: 39,
-        secondaryDosha: 'pitta',
-        secondaryDoshaPercentage: 39,
-        agniType: 'Sama Agni',
-        agniStatus: 'Balanced',
-        currentState: 'pitta',
-        currentStateStatus: 'Imbalanced',
-        // Mock lifestyle data
-        sleepQuality: 'Good',
-        stressLevel: 'Medium',
-        activityLevel: 'Sedentary',
-        hydration: 'Unknown',
-        appetite: 'Normal',
-        // Mock dietary data
-        preferences: ['Vegetarian'],
-        restrictions: ['apple'],
-        healthConditions: ['thyroid'],
-      };
-      setProfile(defaultProfile);
+        profileCompletion: 0,
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -173,8 +176,7 @@ const ProfileScreen = () => {
   };
 
   const handleEditProfile = () => {
-    // Navigate to edit profile screen or open modal
-    Alert.alert('Edit Profile', 'Profile editing functionality coming soon!');
+    setIsEditModalVisible(true);
   };
 
   const handleDeleteAccount = async () => {
@@ -192,9 +194,26 @@ const ProfileScreen = () => {
     Alert.alert('Dashboard', 'Navigating to dashboard...');
   };
 
-  const handleViewResult = () => {
-    // Navigate to results
-    Alert.alert('View Result', 'Viewing assessment results...');
+  const handleViewResult = async () => {
+    if (reportLoading) return;
+
+    try {
+      setReportLoading(true);
+      const response = await getAssessmentHistory();
+      const assessments = response?.assessments || [];
+
+      if (!assessments.length) {
+        Alert.alert('No Result Found', 'No assessment result is available yet.');
+        return;
+      }
+
+      setLatestAssessment(assessments[0]);
+      setIsReportModalVisible(true);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to load assessment result');
+    } finally {
+      setReportLoading(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -211,11 +230,7 @@ const ProfileScreen = () => {
   };
 
   const getRiskLevel = (profile: ProfileData) => {
-    // Simple risk calculation - should be more sophisticated in production
-    if (!profile.bloodPressure && !profile.bloodSugar) return 'Low';
-    if (profile.bloodPressure && profile.bloodPressure > 140) return 'High';
-    if (profile.bloodSugar && profile.bloodSugar > 100) return 'High';
-    return 'Moderate';
+    return profile.riskLevel || 'Moderate';
   };
 
   if (loading) {
@@ -291,25 +306,18 @@ const ProfileScreen = () => {
           </View>
         </View>
 
-      {/* Health Intelligence Summary - Always show with mock data for now */}
-      {(() => {
-        console.log('🚀 About to render HealthIntelligence with props:', {
-          primaryDosha: profile.primaryDosha || 'vata',
-          agniType: profile.agniType || 'Sama Agni',
-          currentState: profile.currentState || 'pitta',
-        });
-        return true;
-      })() && (
+      {/* Health Intelligence - Only shown when framework data is available */}
+      {profile.primaryDosha && (
         <HealthIntelligence
-          framework="AYURVEDA"
-          primaryDosha={profile.primaryDosha || 'vata'}
-          primaryDoshaPercentage={profile.primaryDoshaPercentage || 39}
-          secondaryDosha={profile.secondaryDosha || 'pitta'}
-          secondaryDoshaPercentage={profile.secondaryDoshaPercentage || 39}
-          agniType={profile.agniType || 'Sama Agni'}
-          agniStatus={profile.agniStatus || 'Balanced'}
-          currentState={profile.currentState || 'pitta'}
-          currentStateStatus={profile.currentStateStatus || 'Imbalanced'}
+          framework={(profile.preferredMedicalFramework || 'Ayurveda').toUpperCase()}
+          primaryDosha={profile.primaryDosha}
+          primaryDoshaPercentage={profile.primaryDoshaPercentage}
+          secondaryDosha={profile.secondaryDosha}
+          secondaryDoshaPercentage={profile.secondaryDoshaPercentage}
+          agniType={profile.agniType}
+          agniStatus={profile.agniStatus}
+          currentState={profile.currentState}
+          currentStateStatus={profile.currentStateStatus}
         />
       )}
 
@@ -342,6 +350,14 @@ const ProfileScreen = () => {
         healthConditions={profile.healthConditions}
       />
 
+      {/* Analytics & History */}
+      <AnalyticsHistory
+        currentStreak={profile.currentStreak}
+        compliance={profile.compliance}
+        daysTracked={profile.daysTracked}
+        dietPlans={profile.dietPlansCount}
+      />
+
       {/* Danger Zone */}
       <DangerZone onDeleteAccount={handleDeleteAccount} />
 
@@ -349,6 +365,23 @@ const ProfileScreen = () => {
       <View style={{ height: 40 }} />
       </ScrollView>
       </View>
+
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        isVisible={isEditModalVisible}
+        onClose={() => setIsEditModalVisible(false)}
+        currentData={profile}
+        onSave={() => {
+          fetchProfile();
+          setIsEditModalVisible(false);
+        }}
+      />
+
+      <AssessmentResultModal
+        visible={isReportModalVisible}
+        onClose={() => setIsReportModalVisible(false)}
+        assessment={latestAssessment}
+      />
     </SafeAreaView>
   );
 };
@@ -356,7 +389,7 @@ const ProfileScreen = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8fafc',
   },
   container: {
     flex: 1,

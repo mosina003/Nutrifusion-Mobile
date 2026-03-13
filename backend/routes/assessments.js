@@ -517,6 +517,7 @@ router.get('/diet-plan/current', protect, async (req, res) => {
     }
 
     const framework = user.preferredMedicalFramework || 'ayurveda';
+    console.log(`\n🔍 [Diet Plan Query] User: ${user.email}, Framework: ${framework}`);
 
     // Find active assessment for user's preferred framework
     const assessment = await Assessment.findOne({ 
@@ -526,27 +527,47 @@ router.get('/diet-plan/current', protect, async (req, res) => {
     }).sort({ completedAt: -1 });
 
     if (!assessment) {
+      console.log(`❌ No active assessment found for framework: ${framework}`);
       return res.status(404).json({
         success: false,
         error: `No active ${framework} assessment found. Please complete an assessment first.`
       });
     }
 
+    console.log(`✅ Found assessment: ${assessment._id}, completed: ${assessment.completedAt}`);
+
+    // Debug: Check all diet plans for this user
+    const allUserDietPlans = await DietPlan.find({ userId }).select('planType status validFrom validTo createdAt');
+    console.log(`📊 Total diet plans for user: ${allUserDietPlans.length}`);
+    allUserDietPlans.forEach((plan, idx) => {
+      console.log(`  Plan ${idx + 1}: Type=${plan.planType}, Status=${plan.status}, ValidFrom=${plan.validFrom}, ValidTo=${plan.validTo}`);
+    });
+
     // Find active diet plan from DietPlan collection
+    const today = new Date();
     const dietPlan = await DietPlan.findOne({
       userId,
       status: 'Active',
       planType: framework,
-      validFrom: { $lte: new Date() },
-      validTo: { $gte: new Date() }
+      validFrom: { $lte: today },
+      validTo: { $gte: today }
     }).sort({ createdAt: -1 });
 
     if (!dietPlan) {
+      console.log(`❌ No matching diet plan found. Criteria:`);
+      console.log(`  - userId: ${userId}`);
+      console.log(`  - status: Active`);
+      console.log(`  - planType: ${framework}`);
+      console.log(`  - validFrom <= ${today.toISOString()}`);
+      console.log(`  - validTo >= ${today.toISOString()}`);
+      
       return res.status(404).json({
         success: false,
         error: 'No active diet plan found. Please complete an assessment to generate one.'
       });
     }
+
+    console.log(`✅ Found matching diet plan: ${dietPlan._id}`);
 
     // Convert DietPlan format back to 7_day_plan format for dashboard compatibility
     const sevenDayPlan = convertMealsToSevenDayPlan(dietPlan.meals);
